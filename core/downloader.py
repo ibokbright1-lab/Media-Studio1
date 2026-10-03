@@ -140,11 +140,9 @@ def fetch_info(url: str) -> dict:
         format_id = f.get("format_id")
         ext = f.get("ext")
         
-        # Calculate file size in MB safely
         filesize = f.get("filesize") or f.get("filesize_approx") or 0
         size_mb = round(filesize / (1024 * 1024), 2) if filesize else None
 
-        # Audio-only streams
         if f.get("vcodec") == "none" and f.get("acodec") != "none":
             audio_formats.append({
                 "format_id": format_id,
@@ -153,7 +151,6 @@ def fetch_info(url: str) -> dict:
                 "ext": ext
             })
             
-        # Video streams (we filter out purely audio streams)
         elif f.get("vcodec") != "none":
             video_formats.append({
                 "format_id": format_id,
@@ -163,18 +160,36 @@ def fetch_info(url: str) -> dict:
                 "ext": ext
             })
 
-    # Sort arrays so highest quality appears at the top of the frontend table
     audio_formats = sorted(audio_formats, key=lambda x: x["bitrate"], reverse=True)
     video_formats = sorted(video_formats, key=lambda x: (x["height"], x["fps"]), reverse=True)
+
+    # --- DEDUPLICATION FILTER STARTS HERE ---
+    unique_videos = []
+    seen_videos = set()
+    for v in video_formats:
+        key = (v["height"], v["ext"])
+        if key not in seen_videos:
+            seen_videos.add(key)
+            unique_videos.append(v)
+    
+    unique_audios = []
+    seen_audios = set()
+    for a in audio_formats:
+        key = (a["bitrate"], a["ext"])
+        if key not in seen_audios:
+            seen_audios.add(key)
+            unique_audios.append(a)
+    # --- DEDUPLICATION FILTER ENDS HERE ---
+
     return {
         "title": info.get("title") or "Untitled",
         "uploader": info.get("uploader") or info.get("channel"),
         "duration": info.get("duration"),
         "thumbnail": info.get("thumbnail"),
         "is_live": bool(info.get("is_live")),
-        "videos": video_formats,
-        "audios": audio_formats,
-        "warning": ytdlp_version_warning()
+        "videos": unique_videos,
+        "audios": unique_audios,
+        "warning": None
     }
 
 def download(url: str, out_dir, kind="video", height=720, format_id=None, start=None, end=None,
