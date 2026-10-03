@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>MediaStudio — Media Downloader & Studio</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+        rel="stylesheet"
+    >
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+    <!-- =========================================
+         BACKGROUND
+    ========================================== -->
+
+    <div class="background">
+        <div class="ambient ambient-blue"></div>
+        <div class="ambient ambient-purple"></div>
+        <div class="ambient ambient-cyan"></div>
+        <div class="noise"></div>
+    </div>
+
+
+    <!-- =========================================
+         APP
+    ========================================== -->
+
+    <div class="app-layout">
+
+
+        <!-- =====================================
+             SIDEBAR
+        ====================================== -->
+
+        <aside class="sidebar">
+
+            <div class="sidebar-top">
+
+                <!-- Logo -->
+                <div class="logo">
+
+                    <div class="logo-mark">
+                        <span>⚡</span>
+                    </div>
+
+                    <div class="logo-text">
+                        <strong>Media<span>Studio</span></strong>
+                        <small>MEDIA WORKSPACE</small>
+                    </div>
+
+                </div>
+
+
+                <!-- Workspace label -->
+                <div class="menu-label">
+                    WORKSPACE
+                </div>
+
+
+                <!-- Navigation -->
+                <nav class="nav-menu">
+
+                    <button
+                        class="nav-link active"
+                        data-target="video-section"
+                        type="button"
+                    >
+                        <span class="nav-icon">◉</span>
+                        <span class="nav-text">Video Downloader</span>
+                    </button>
+
+
+                    <button
+                        class="nav-link"
+                        data-target="audio-section"
+                        type="button"
+                    >
+                        <span class="nav-icon">♫</span>
+                        <span class="nav-text">Audio / MP3</span>
+                    </button>
+
+
+                    <button
+                        class="nav-link"
+                        data-target="trimmer-section"
+                        type="button"
+                    >
+                        <span class="nav-icon">✂</span>
+                        <span class="nav-text">The Studio</span>
+                    </button>
+
+
+                    <button
+                        class="nav-link"
+                        data-target="history-section"
+                        type="button"
+                    >
+                        <span class="nav-icon">◷</span>
+                        <span class="nav-text">History</span>
+                    </button>
+
+
+                    <button
+                        class="nav-link"
+                        data-target="settings-section"
+                        type="button"
+                    >
+                        <span class="nav-icon">⚙</span>
+                        <span class="nav-text">Settings</span>
+                    </button>
+
+                </nav>
+
+            </div>
+
+
+            <!-- Sidebar bottom -->
+            <div class="sidebar-bottom">
+
+                <div class="storage-card">
+
+                    <div class="storage-header">
+                        <div>
+                            <span class="storage-title">Storage</span>
+                            <span class="storage-subtitle">Local workspace</span>
+                        </div>
+
+                        <span class="storage-icon">▣</span>
+                    </div>
+
+                    <div class="storage-progress">
+                        <div class="storage-progress-fill"></div>
+                    </div>
+
+                    <div class="storage-info">
+                        <span>2.4 GB used</span>
+                        <span>10 GB</span>
+                    </div>
+
+                </div>
+
+
+                <div class="sidebar-footer">
+
+                    <div class="status-dot"></div>
+
+                    <span>System ready</span>
+
+                    <span class="version">
+                        v1.0
+                    </span>
+
+                </div>
+
+            </div>
+
+        </aside>
+
+
+
+        <!-- =====================================
+             MAIN CONTENT
+        ====================================== -->
+
+        <main class="main-content">
+
+
+            <!-- =================================
+                 TOP BAR
+            ================================== -->
+
+            <header class="topbar">
+
+                <div class="breadcrumb">
+
+                    <span>Workspace</span>
+
+                    <span class="breadcrumb-arrow">/</span>
+
+                    <strong id="breadcrumb-current">
+                        Video Downloader
+                    </strong>
+
+                </div>
+
+
+                <div class="topbar-actions">
+
+                    <button class="icon-button" title="Notifications">
+                        ♢
+                    </button>
+
+                    <button class="profile-button">
+
+                        <div class="avatar">
+                            M
+                        </div>
+
+                        <div class="profile-info">
+                            <strong>Media User</strong>
+                            <span>Personal workspace</span>
+                        </div>
+
+                        <span class="profile-arrow">
+                            ▾
+                        </span>
+
+                    </button>
+
+                </div>
+
+            </header>
+
+
+
+            <!-- =================================
+                 CONTENT
+            ================================== -->
+
+            <div class="content-wrapper">
+
+
+                <!-- =================================
+                     VIDEO DOWNLOADER
+                ================================== -->
+
+                <section
+                    id="video-section"
+                    class="app-section active"
+                >
+
+                    <div class="hero-header">
+
+                        <div>
+
+                            <div class="eyebrow">
+                                <span class="eyebrow-dot"></span>
+                                MEDIA DOWNLOADER
+                            </div>
+
+                            <h1>
+                                Download videos.
+                                <span>Simply.</span>
+                            </h1>
+
+                            <p>
+                                Paste a media link and get access to
+                                available high-quality video formats.
+                            </p>
+
+                        </div>
+
+                        <div class="hero-badge">
+                            <span>●</span>
+                            Ready to process
+                        </div>
+
+                    </div>
+
+
+
+                    <!-- URL INPUT -->
+                    <div class="download-box">
+
+                        <div class="download-box-glow"></div>
+
+                        <div class="input-wrapper">
+
+                            <div class="input-icon">
+                                ↗
+                            </div>
+
+                            <input
+                                type="url"
+                                id="video-url"
+                                placeholder="Paste your video URL here..."
+                                class="url-input"
+                                autocomplete="off"
+                            >
+
+                            <button
+                                class="btn-primary"
+                                id="btn-analyze-video"
+                                type="button"
+                            >
+                                <span>Analyze</span>
+                                <span class="button-arrow">→</span>
+                            </button>
+
+                        </div>
+
+                        <div class="input-hint">
+
+                            <span class="secure-icon">✓</span>
+
+                            Supports URLs from compatible media platforms
+
+                            <span class="hint-separator">•</span>
+
+                            Fast analysis
+
+                        </div>
+
+                    </div>
+
+
+
+                    <!-- Quick cards -->
+                    <div class="quick-grid">
+
+                        <div class="quick-card">
+
+                            <div class="quick-icon blue">
+                                HD
+                            </div>
+
+                            <div>
+                                <strong>High Quality</strong>
+                                <span>Available formats</span>
+                            </div>
+
+                        </div>
+
+
+                        <div class="quick-card">
+
+                            <div class="quick-icon purple">
+                                MP4
+                            </div>
+
+                            <div>
+                                <strong>Video Formats</strong>
+                                <span>Multiple resolutions</span>
+                            </div>
+
+                        </div>
+
+
+                        <div class="quick-card">
+
+                            <div class="quick-icon cyan">
+                                ⚡
+                            </div>
+
+                            <div>
+                                <strong>Fast Processing</strong>
+                                <span>Optimized workflow</span>
+                            </div>
+
+                        </div>
+
+                    </div>
+
+
+
+                    <!-- VIDEO RESULTS -->
+                    <div
+                        id="video-results"
+                        class="results-container hidden"
+                    >
+
+                        <div class="media-card glass-panel">
+
+                            <div class="card-label">
+                                MEDIA PREVIEW
+                            </div>
+
+                            <div class="thumbnail-wrapper">
+
+                                <img
+                                    id="video-thumb"
+                                    src=""
+                                    alt="Video Thumbnail"
+                                    class="thumbnail"
+                                >
+
+                                <div class="thumbnail-overlay">
+                                    <div class="play-button">
+                                        ▶
+                                    </div>
+                                </div>
+
+                            </div>
+
+                            <div class="media-details">
+
+                                <span class="media-type">
+                                    VIDEO
+                                </span>
+
+                                <h3
+                                    id="video-title"
+                                    class="media-title"
+                                ></h3>
+
+                            </div>
+
+                        </div>
+
+
+
+                        <div class="formats-card glass-panel">
+
+                            <div class="formats-header">
+
+                                <div>
+                                    <div class="card-label">
+                                        DOWNLOAD OPTIONS
+                                    </div>
+
+                                    <h3>
+                                        Available Video Formats
+                                    </h3>
+                                </div>
+
+                                <span class="format-count">
+                                    Formats
+                                </span>
+
+                            </div>
+
+
+                            <div class="table-responsive">
+
+                                <table class="format-table">
+
+                                    <thead>
+
+                                        <tr>
+                                            <th>QUALITY</th>
+                                            <th>FPS</th>
+                                            <th>SIZE</th>
+                                            <th>ACTION</th>
+                                        </tr>
+
+                                    </thead>
+
+                                    <tbody id="video-format-list">
+                                        <!-- Populated by JS -->
+                                    </tbody>
+
+                                </table>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                </section>
+
+
+
+                <!-- =================================
+                     AUDIO
+                ================================== -->
+
+                <section
+                    id="audio-section"
+                    class="app-section hidden"
+                >
+
+                    <div class="hero-header">
+
+                        <div>
+
+                            <div class="eyebrow">
+                                <span class="eyebrow-dot purple-dot"></span>
+                                AUDIO DOWNLOADER
+                            </div>
+
+                            <h1>
+                                Turn media into
+                                <span>MP3.</span>
+                            </h1>
+
+                            <p>
+                                Extract audio from compatible media
+                                and convert it into MP3.
+                            </p>
+
+                        </div>
+
+                    </div>
+
+
+
+                    <div class="download-box audio-box">
+
+                        <div class="input-wrapper">
+
+                            <div class="input-icon purple-input">
+                                ♫
+                            </div>
+
+                            <input
+                                type="url"
+                                id="audio-url"
+                                placeholder="Paste your media URL here..."
+                                class="url-input"
+                                autocomplete="off"
+                            >
+
+                            <button
+                                class="btn-primary purple-button"
+                                id="btn-analyze-audio"
+                                type="button"
+                            >
+                                <span>Analyze</span>
+                                <span class="button-arrow">→</span>
+                            </button>
+
+                        </div>
+
+                        <div class="input-hint">
+
+                            <span class="secure-icon">✓</span>
+
+                            Audio output will be converted to MP3
+
+                        </div>
+
+                    </div>
+
+
+
+                    <div
+                        id="audio-results"
+                        class="results-container hidden"
+                    >
+
+                        <div class="media-card glass-panel">
+
+                            <div class="card-label">
+                                AUDIO PREVIEW
+                            </div>
+
+                            <div class="thumbnail-wrapper">
+
+                                <img
+                                    id="audio-thumb"
+                                    src=""
+                                    alt="Audio Thumbnail"
+                                    class="thumbnail"
+                                >
+
+                                <div class="thumbnail-overlay audio-overlay">
+                                    <div class="play-button">
+                                        ♫
+                                    </div>
+                                </div>
+
+                            </div>
+
+                            <div class="media-details">
+
+                                <span class="media-type">
+                                    AUDIO
+                                </span>
+
+                                <h3
+                                    id="audio-title"
+                                    class="media-title"
+                                ></h3>
+
+                            </div>
+
+                        </div>
+
+
+
+                        <div class="formats-card glass-panel">
+
+                            <div class="formats-header">
+
+                                <div>
+                                    <div class="card-label">
+                                        AUDIO OPTIONS
+                                    </div>
+
+                                    <h3>
+                                        Available Audio Qualities
+                                    </h3>
+                                </div>
+
+                            </div>
+
+
+                            <div class="table-responsive">
+
+                                <table class="format-table">
+
+                                    <thead>
+
+                                        <tr>
+                                            <th>BITRATE</th>
+                                            <th>FORMAT</th>
+                                            <th>EST. SIZE</th>
+                                            <th>ACTION</th>
+                                        </tr>
+
+                                    </thead>
+
+                                    <tbody id="audio-format-list">
+                                        <!-- Populated by JS -->
+                                    </tbody>
+
+                                </table>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                </section>
+
+
+
+                <!-- =================================
+                     THE STUDIO
+                ================================== -->
+
+                <section
+                    id="trimmer-section"
+                    class="app-section hidden"
+                >
+
+                    <div class="hero-header">
+
+                        <div>
+
+                            <div class="eyebrow">
+                                <span class="eyebrow-dot orange-dot"></span>
+                                THE STUDIO
+                            </div>
+
+                            <h1>
+                                Shape your
+                                <span>media.</span>
+                            </h1>
+
+                            <p>
+                                Cut the exact section you need from
+                                a URL or local media file.
+                            </p>
+
+                        </div>
+
+                    </div>
+
+
+
+                    <div class="studio-grid">
+
+
+                        <!-- URL TRIM -->
+                        <div class="studio-card glass-panel">
+
+                            <div class="studio-card-header">
+
+                                <div class="studio-icon blue-studio">
+                                    ✂
+                                </div>
+
+                                <div>
+
+                                    <h3>Trim from URL</h3>
+
+                                    <p>
+                                        Cut a section directly from
+                                        a media link.
+                                    </p>
+
+                                </div>
+
+                            </div>
+
+
+                            <label>
+                                MEDIA URL
+                            </label>
+
+                            <div class="studio-input">
+
+                                <span>↗</span>
+
+                                <input
+                                    type="url"
+                                    id="trim-url"
+                                    placeholder="Paste media link..."
+                                    class="url-input"
+                                >
+
+                            </div>
+
+
+                            <label>
+                                TIME RANGE
+                            </label>
+
+                            <div class="time-inputs">
+
+                                <div class="time-input">
+
+                                    <span>FROM</span>
+
+                                    <input
+                                        type="text"
+                                        id="trim-start"
+                                        placeholder="00:00"
+                                    >
+
+                                </div>
+
+
+                                <div class="time-divider">
+                                    →
+                                </div>
+
+
+                                <div class="time-input">
+
+                                    <span>TO</span>
+
+                                    <input
+                                        type="text"
+                                        id="trim-end"
+                                        placeholder="01:30"
+                                    >
+
+                                </div>
+
+                            </div>
+
+
+                            <button
+                                class="btn-primary studio-button w-full"
+                                type="button"
+                            >
+                                <span>Cut & Download</span>
+                                <span>→</span>
+                            </button>
+
+                        </div>
+
+
+
+                        <!-- LOCAL FILE -->
+                        <div class="studio-card glass-panel">
+
+                            <div class="studio-card-header">
+
+                                <div class="studio-icon purple-studio">
+                                    ↑
+                                </div>
+
+                                <div>
+
+                                    <h3>Trim Local File</h3>
+
+                                    <p>
+                                        Work with a file already
+                                        stored on your device.
+                                    </p>
+
+                                </div>
+
+                            </div>
+
+
+                            <div class="drop-zone">
+
+                                <div class="upload-circle">
+                                    ↑
+                                </div>
+
+                                <strong>
+                                    Drop your media here
+                                </strong>
+
+                                <span>
+                                    or browse files from your computer
+                                </span>
+
+                                <button
+                                    class="btn-secondary"
+                                    type="button"
+                                >
+                                    Browse Files
+                                </button>
+
+                                <small>
+                                    MP4, MOV, MP3 and supported formats
+                                </small>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+
+
+                    <!-- Studio tips -->
+                    <div class="studio-info">
+
+                        <div class="info-icon">
+                            i
+                        </div>
+
+                        <div>
+                            <strong>Precision trimming</strong>
+
+                            <p>
+                                Use MM:SS or HH:MM:SS format for
+                                accurate start and end points.
+                            </p>
+                        </div>
+
+                    </div>
+
+                </section>
+
+
+
+                <!-- =================================
+                     HISTORY
+                ================================== -->
+
+                <section
+                    id="history-section"
+                    class="app-section hidden"
+                >
+
+                    <div class="hero-header">
+
+                        <div>
+
+                            <div class="eyebrow">
+                                <span class="eyebrow-dot"></span>
+                                ACTIVITY
+                            </div>
+
+                            <h1>
+                                Your <span>history.</span>
+                            </h1>
+
+                            <p>
+                                Recently processed media will appear here.
+                            </p>
+
+                        </div>
+
+                    </div>
+
+
+                    <div class="empty-state glass-panel">
+
+                        <div class="empty-icon">
+                            ◷
+                        </div>
+
+                        <h3>No activity yet</h3>
+
+                        <p>
+                            Your downloaded and processed media
+                            will appear here.
+                        </p>
+
+                        <button
+                            class="btn-primary"
+                            data-target="video-section"
+                            type="button"
+                        >
+                            Start downloading
+                        </button>
+
+                    </div>
+
+                </section>
+
+
+
+                <!-- =================================
+                     SETTINGS
+                ================================== -->
+
+                <section
+                    id="settings-section"
+                    class="app-section hidden"
+                >
+
+                    <div class="hero-header">
+
+                        <div>
+
+                            <div class="eyebrow">
+                                <span class="eyebrow-dot"></span>
+                                PREFERENCES
+                            </div>
+
+                            <h1>
+                                Application
+                                <span>settings.</span>
+                            </h1>
+
+                            <p>
+                                Manage your MediaStudio preferences.
+                            </p>
+
+                        </div>
+
+                    </div>
+
+
+                    <div class="settings-card glass-panel">
+
+                        <div class="settings-row">
+
+                            <div class="setting-icon">
+                                ↓
+                            </div>
+
+                            <div class="setting-content">
+
+                                <strong>
+                                    Download location
+                                </strong>
+
+                                <span>
+                                    Choose where processed files
+                                    should be saved.
+                                </span>
+
+                            </div>
+
+                            <button class="settings-action">
+                                Configure
+                            </button>
+
+                        </div>
+
+
+                        <div class="settings-row">
+
+                            <div class="setting-icon">
+                                HD
+                            </div>
+
+                            <div class="setting-content">
+
+                                <strong>
+                                    Default quality
+                                </strong>
+
+                                <span>
+                                    Automatically select your
+                                    preferred media quality.
+                                </span>
+
+                            </div>
+
+                            <select class="settings-select">
+                                <option>Best available</option>
+                                <option>1080p</option>
+                                <option>720p</option>
+                                <option>480p</option>
+                            </select>
+
+                        </div>
+
+
+                        <div class="settings-row">
+
+                            <div class="setting-icon">
+                                ⚡
+                            </div>
+
+                            <div class="setting-content">
+
+                                <strong>
+                                    Fast processing
+                                </strong>
+
+                                <span>
+                                    Optimize the application for
+                                    faster processing.
+                                </span>
+
+                            </div>
+
+                            <label class="toggle">
+                                <input
+                                    type="checkbox"
+                                    checked
+                                >
+                                <span></span>
+                            </label>
+
+                        </div>
+
+                    </div>
+
+                </section>
+
+            </div>
+
+        </main>
+
+    </div>
+
+
+
+    <!-- =========================================
+         GLOBAL PROGRESS TRAY
+    ========================================== -->
+
+    <div
+        id="progress-tray"
+        class="progress-tray hidden"
+    >
+
+        <div class="progress-top">
+
+            <div class="progress-icon">
+                ⚡
+            </div>
+
+            <div class="progress-copy">
+
+                <strong id="progress-status">
+                    Processing...
+                </strong>
+
+                <span>
+                    Please keep this window open
+                </span>
+
+            </div>
+
+            <strong
+                id="progress-percent"
+                class="percent-text"
+            >
+                0%
+            </strong>
+
+        </div>
+
+
+        <div class="progress-bar-bg">
+
+            <div
+                id="progress-bar-fill"
+                class="progress-bar-fill"
+            ></div>
+
+        </div>
+
+    </div>
+
+
+
+    <!-- =========================================
+         SCRIPT
+    ========================================== -->
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+
+</body>
+</html>
