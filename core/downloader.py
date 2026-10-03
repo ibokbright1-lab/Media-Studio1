@@ -105,13 +105,16 @@ def _base_opts() -> dict:
         "socket_timeout": 30, 
         "concurrent_fragment_downloads": 4, 
         "windowsfilenames": True,
-        "noprogress": True
+        "noprogress": True,
+        # FIXED: Tell YouTube and Instagram we are a mobile device to bypass the "Sign In" wall
+        "extractor_args": {"youtube": ["player_client=android"]}
     }
     if config.COOKIES_FROM_BROWSER:
         o["cookiesfrombrowser"] = (config.COOKIES_FROM_BROWSER,)
     elif Path(config.COOKIES_FILE).is_file():
         o["cookiefile"] = config.COOKIES_FILE
     return o
+
 
 def _safe_title(t: str) -> str:
     t = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "", t or "download").strip(" .")
