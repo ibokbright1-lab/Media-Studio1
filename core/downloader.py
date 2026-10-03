@@ -95,6 +95,7 @@ def ytdlp_version_warning():
 
 
 def _base_opts() -> dict:
+    "cookiefile": "cookies.txt",
     o = {"quiet": True, "no_warnings": True, "noplaylist": True, "retries": 10, "fragment_retries": 10,
          "socket_timeout": 30, "concurrent_fragment_downloads": 4, "windowsfilenames": True,
          "noprogress": True}
