@@ -199,11 +199,18 @@ def job_cancel(job_id):
     return jsonify({"ok": bool(job)})
 
 
-@bp.get("/files/<job_id>/<path:name>")
-def get_file(job_id, name):
-    cleanup_old_files()
-    try:
-        # FIXED: Removed strict regex constraints so all file IDs process smoothly
-        return send_from_directory(config.OUTPUT_DIR / job_id, name, as_attachment=request.args.get("play") != "1")
-    except Exception:
-        return _err("File not found on server.", 404)
+def extract_with_fallback(url: str, download: bool = False, extra: dict | None = None):
+    """Try each YouTube client until one gets past the bot check."""
+    last_err = None
+    for client in YT_CLIENT_CHAIN:
+        opts = _base_opts(client)
+        if extra:
+            opts.update(extra)
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                return ydl.extract_info(url, download=download)
+        except Exception as e:  # noqa: BLE001
+            last_err = e
+            if "Sign in to confirm" not in str(e) and "bot" not in str(e).lower():
+                raise  # a different error; don't keep retrying
+    raise last_err
