@@ -153,23 +153,27 @@ def api_trim():
 
 @bp.post("/api/info")
 def api_info():
-    return jsonify(downloader.fetch_info((request.get_json(silent=True) or {}).get("url", "")))
+    # Check for JSON first, fall back to FormData if JSON isn't used
+    d = request.get_json(silent=True) or request.form
+    return jsonify(downloader.fetch_info(d.get("url", "")))
 
 
 @bp.post("/api/download")
 def api_download():
-    d = request.get_json(silent=True) or {}
+    # Support both data formats
+    d = request.get_json(silent=True) or request.form
     url = downloader.validate_url(d.get("url", ""))
     kind = d.get("kind", "video")
     if kind not in ("video", "audio"):
         raise MediaError("Invalid download type.")
     
     # Extract height AND the specific format_id chosen by the user
-    height = int(d["height"]) if d.get("height") else None
+    height = int(d.get("height")) if d.get("height") else None
     format_id = d.get("format_id")
     
-    start = parse_time(d["start"]) if str(d.get("start", "")).strip() else None
-    end = parse_time(d["end"]) if str(d.get("end", "")).strip() else None
+    # Safely get start and end times without throwing a KeyError
+    start = parse_time(d.get("start", "")) if str(d.get("start", "")).strip() else None
+    end = parse_time(d.get("end", "")) if str(d.get("end", "")).strip() else None
     if start is not None and end is not None and end <= start:
         raise MediaError("End time must be after the start time.")
         
