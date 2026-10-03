@@ -779,23 +779,19 @@
                             </div>
 
 
-                            <div class="drop-zone">
-
-                           <div class="upload-circle">
+                           <!-- 1. The upload area -->
+<div id="file-drop-area" class="drop-zone">
+    <div class="upload-circle">
         ↑
-                           </div>
-
-                           <strong>
-                             Drop your media here
-                          </strong>
-
+    </div>
+    <strong>
+        Drop your media here
+    </strong>
     <span>
         or browse files from your computer
     </span>
-
     <!-- The hidden file input that allows device selection -->
     <input type="file" id="local-media-upload" style="display: none;" accept="video/*,audio/*">
-    
     <!-- The updated button that triggers the hidden input -->
     <button
         class="btn-secondary"
@@ -804,11 +800,33 @@
     >
         Browse Files
     </button>
-
     <small>
         MP4, MOV, MP3 and supported formats
     </small>
+</div>
 
+<!-- 2. The trim configuration (Hidden until a file is selected) -->
+<div id="local-trim-config" class="hidden" style="margin-top: 1.5rem; text-align: left;">
+    <div style="background: rgba(255,255,255,0.05); padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
+        <strong style="color: var(--muted); font-size: 0.8rem; display: block; margin-bottom: 0.3rem;">SELECTED FILE</strong>
+        <span id="selected-file-name" style="font-weight: 600; color: #fff; word-break: break-all;">None</span>
+    </div>
+    
+    <div style="display: flex; gap: 1rem; margin-bottom: 1.5rem;">
+        <div style="flex: 1;">
+            <label style="font-size: 0.8rem; color: var(--muted); margin-bottom: 0.5rem; display: block;">Start Time</label>
+            <input type="text" id="local-trim-start" class="url-input" placeholder="0:00" autocomplete="off">
+        </div>
+        <div style="flex: 1;">
+            <label style="font-size: 0.8rem; color: var(--muted); margin-bottom: 0.5rem; display: block;">End Time</label>
+            <input type="text" id="local-trim-end" class="url-input" placeholder="0:00" autocomplete="off">
+        </div>
+    </div>
+    
+    <div style="display: flex; gap: 1rem;">
+        <button class="btn-primary" id="btn-process-local-trim" style="flex: 2;">Trim & Download</button>
+        <button class="btn-secondary" id="btn-cancel-local-trim" style="flex: 1;">Cancel</button>
+    </div>
 </div>
 
 
