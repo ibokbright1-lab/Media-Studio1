@@ -781,34 +781,35 @@
 
                             <div class="drop-zone">
 
-                                <div class="upload-circle">
-                                    ↑
-                                </div>
+                           <div class="upload-circle">
+        ↑
+                           </div>
 
-                                <strong>
-                                    Drop your media here
-                                </strong>
+                           <strong>
+                             Drop your media here
+                          </strong>
 
-                                <span>
-                                    or browse files from your computer
-                                </span>
+    <span>
+        or browse files from your computer
+    </span>
 
-                                <button
-                                    class="btn-secondary"
-                                    type="button"
-                                >
-                                    Browse Files
-                                </button>
+    <!-- The hidden file input that allows device selection -->
+    <input type="file" id="local-media-upload" style="display: none;" accept="video/*,audio/*">
+    
+    <!-- The updated button that triggers the hidden input -->
+    <button
+        class="btn-secondary"
+        type="button"
+        onclick="document.getElementById('local-media-upload').click();"
+    >
+        Browse Files
+    </button>
 
-                                <small>
-                                    MP4, MOV, MP3 and supported formats
-                                </small>
+    <small>
+        MP4, MOV, MP3 and supported formats
+    </small>
 
-                            </div>
-
-                        </div>
-
-                    </div>
+</div>
 
 
 
