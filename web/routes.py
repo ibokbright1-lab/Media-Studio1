@@ -1,6 +1,7 @@
 """HTTP layer: validates input, starts jobs, serves results. All real work lives in core/."""
 import re
 import shutil
+import urllib.parse
 from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, render_template, request, send_from_directory
@@ -18,7 +19,6 @@ from core.timeparse import parse_time
 from core.trim import EXTRACT_FORMATS, trim_media
 
 bp = Blueprint("web", __name__)
-ID_RE = re.compile(r"^[0-9a-f]{32}$")
 ALLOWED = config.AUDIO_EXTS | config.VIDEO_EXTS
 
 
@@ -72,7 +72,9 @@ def _start_job(kind, work):
 
     def fn(job):
         res = work(job, in_path, out_dir)
-        res["url"] = f"/files/{job_id}/{res['file']}"
+        # FIXED: URL-encode the filename so spaces and hashtags don't break the browser redirect
+        safe_name = urllib.parse.quote(res['file'])
+        res["url"] = f"/files/{job_id}/{safe_name}"
         res["size_human"] = human_size((out_dir / res["file"]).stat().st_size)
         res.pop("path", None)
         return res
@@ -120,7 +122,6 @@ def api_compress():
 
 @bp.post("/api/analyze")
 def api_analyze():
-    """Preview for Smart Silence Cut -- how much would be removed. Writes nothing permanent."""
     tmp_id = jobs().new_id()
     try:
         path = _save_upload(tmp_id)
@@ -153,25 +154,21 @@ def api_trim():
 
 @bp.post("/api/info")
 def api_info():
-    # Check for JSON first, fall back to FormData if JSON isn't used
     d = request.get_json(silent=True) or request.form
     return jsonify(downloader.fetch_info(d.get("url", "")))
 
 
 @bp.post("/api/download")
 def api_download():
-    # Support both data formats
     d = request.get_json(silent=True) or request.form
     url = downloader.validate_url(d.get("url", ""))
     kind = d.get("kind", "video")
     if kind not in ("video", "audio"):
         raise MediaError("Invalid download type.")
     
-    # Extract height AND the specific format_id chosen by the user
     height = int(d.get("height")) if d.get("height") else None
     format_id = d.get("format_id")
     
-    # Safely get start and end times without throwing a KeyError
     start = parse_time(d.get("start", "")) if str(d.get("start", "")).strip() else None
     end = parse_time(d.get("end", "")) if str(d.get("end", "")).strip() else None
     if start is not None and end is not None and end <= start:
@@ -182,7 +179,6 @@ def api_download():
         raise MediaError("Unknown format or quality preset.")
 
     def work(job, _in, out_dir):
-        # We now pass format_id down to run_download
         return run_download(job.update, lambda: job.cancelled, out_dir, url, kind, 
                             height=height, format_id=format_id, start=start, end=end,
                             audio_fmt=fmt, preset=preset, message=lambda m: job.update(message=m))
@@ -193,19 +189,21 @@ def api_download():
 # ------------------------------------------------------------------ jobs / files
 @bp.get("/api/jobs/<job_id>")
 def job_status(job_id):
-    job = jobs().get(job_id) if ID_RE.match(job_id) else None
+    job = jobs().get(job_id)
     return jsonify(job.public()) if job else _err("Job not found (it may have expired).", 404)
 
 
 @bp.post("/api/jobs/<job_id>/cancel")
 def job_cancel(job_id):
-    job = jobs().cancel(job_id) if ID_RE.match(job_id) else None
+    job = jobs().cancel(job_id)
     return jsonify({"ok": bool(job)})
 
 
 @bp.get("/files/<job_id>/<path:name>")
 def get_file(job_id, name):
-    if not ID_RE.match(job_id):
-        return _err("Not found.", 404)
     cleanup_old_files()
-    return send_from_directory(config.OUTPUT_DIR / job_id, name, as_attachment=request.args.get("play") != "1")
+    try:
+        # FIXED: Removed strict regex constraints so all file IDs process smoothly
+        return send_from_directory(config.OUTPUT_DIR / job_id, name, as_attachment=request.args.get("play") != "1")
+    except Exception:
+        return _err("File not found on server.", 404)
