@@ -11,16 +11,13 @@ document.addEventListener("DOMContentLoaded", () => {
         link.addEventListener("click", (e) => {
             const targetBtn = e.currentTarget;
             
-            // Reset active states
             navLinks.forEach(l => l.classList.remove("active"));
             sections.forEach(s => s.classList.add("hidden"));
 
-            // Activate clicked section
             targetBtn.classList.add("active");
             const targetId = targetBtn.getAttribute("data-target");
             document.getElementById(targetId).classList.remove("hidden");
             
-            // Update Topbar Breadcrumb
             breadcrumb.textContent = targetBtn.querySelector('.nav-text').textContent;
         });
     });
@@ -37,25 +34,25 @@ document.addEventListener("DOMContentLoaded", () => {
         const btn = type === 'video' ? btnAnalyzeVideo : btnAnalyzeAudio;
         const originalText = btn.querySelector('span:first-child').textContent;
         
-        // Loading state
         btn.querySelector('span:first-child').textContent = "Analyzing...";
         btn.disabled = true;
 
         try {
+            // FIXED: Send as FormData instead of JSON
+            const formData = new FormData();
+            formData.append("url", url);
+
             const response = await fetch("/api/info", {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ url: url })
+                body: formData
             });
 
             const data = await response.json();
             if (data.error) throw new Error(data.error);
 
-            // Populate preview card
             document.getElementById(`${type}-thumb`).src = data.thumbnail || '';
             document.getElementById(`${type}-title`).textContent = data.title || 'Unknown Title';
 
-            // Populate format tables
             const tbody = document.getElementById(`${type}-format-list`);
             tbody.innerHTML = ""; 
 
@@ -81,20 +78,18 @@ document.addEventListener("DOMContentLoaded", () => {
                 });
             }
 
-            // Reveal the results card
             document.getElementById(`${type}-results`).classList.remove("hidden");
             
         } catch (error) {
             alert("Analysis Failed: " + error.message);
         } finally {
-            // Restore button state
             btn.querySelector('span:first-child').textContent = originalText;
             btn.disabled = false;
         }
     }
 
-    btnAnalyzeVideo.addEventListener("click", () => analyzeMedia(document.getElementById("video-url").value, 'video'));
-    btnAnalyzeAudio.addEventListener("click", () => analyzeMedia(document.getElementById("audio-url").value, 'audio'));
+    if (btnAnalyzeVideo) btnAnalyzeVideo.addEventListener("click", () => analyzeMedia(document.getElementById("video-url").value, 'video'));
+    if (btnAnalyzeAudio) btnAnalyzeAudio.addEventListener("click", () => analyzeMedia(document.getElementById("audio-url").value, 'audio'));
 
 
     // =====================================================================
@@ -111,10 +106,16 @@ document.addEventListener("DOMContentLoaded", () => {
             btn.textContent = "Starting...";
 
             try {
+                // FIXED: Send as FormData instead of JSON to fix "Invalid URL" error
+                const formData = new FormData();
+                formData.append("url", url);
+                formData.append("kind", kind);
+                formData.append("format_id", formatId);
+                formData.append("fmt", "mp3");
+
                 const response = await fetch("/api/download", {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ url: url, kind: kind, format_id: formatId, fmt: "mp3" })
+                    body: formData
                 });
 
                 const data = await response.json();
@@ -132,7 +133,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     // =====================================================================
-    // 4. THE STUDIO (TRIMMER)
+    // 4. THE STUDIO (TRIMMER FROM URL)
     // =====================================================================
     const btnTrim = document.querySelector(".studio-button");
 
@@ -150,7 +151,6 @@ document.addEventListener("DOMContentLoaded", () => {
             btnTextSpan.textContent = "Starting...";
 
             try {
-                // The /api/trim endpoint uses request.form, so we send FormData
                 const formData = new FormData();
                 formData.append("url", url);
                 formData.append("start", start);
@@ -185,6 +185,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const percentText = document.getElementById("progress-percent");
         const barFill = document.getElementById("progress-bar-fill");
 
+        if(!tray) return;
+
         tray.classList.remove("hidden");
         barFill.style.background = "linear-gradient(90deg, #4f8cff, #8b5cf6)"; 
         barFill.style.width = "0%";
@@ -204,12 +206,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (data.status === "done") {
                     clearInterval(interval);
                     statusText.textContent = "Complete!";
-                    barFill.style.background = "var(--success)"; // Turns green on completion
+                    barFill.style.background = "var(--success)"; 
                     
-                    // Trigger native file download
                     window.location.href = data.url;
 
-                    // Hide tray and reset buttons after a delay
                     setTimeout(() => {
                         tray.classList.add("hidden");
                         document.querySelectorAll(".btn-download").forEach(b => {
@@ -235,5 +235,59 @@ document.addEventListener("DOMContentLoaded", () => {
                 setTimeout(() => tray.classList.add("hidden"), 3000);
             }
         }, 1000);
+    }
+
+    // =====================================================================
+    // 6. THE STUDIO (UPLOAD LOCAL FILE)
+    // =====================================================================
+    const localMediaUpload = document.getElementById("local-media-upload");
+
+    if (localMediaUpload) {
+        localMediaUpload.addEventListener("change", async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            // Optional: If you have start/end inputs for local files, grab them here.
+            // For now, we will send the file directly to your trimming endpoint.
+            const formData = new FormData();
+            formData.append("file", file);
+            
+            // Activate the global progress tray so the user sees the upload happening
+            const tray = document.getElementById("progress-tray");
+            const statusText = document.getElementById("progress-status");
+            const percentText = document.getElementById("progress-percent");
+            const barFill = document.getElementById("progress-bar-fill");
+
+            if (tray) {
+                tray.classList.remove("hidden");
+                statusText.textContent = `Uploading ${file.name}...`;
+                percentText.textContent = "Uploading...";
+                barFill.style.background = "linear-gradient(90deg, #4f8cff, #8b5cf6)";
+                barFill.style.width = "50%"; // Fake visual progress for the upload phase
+            }
+
+            try {
+                // Assuming your backend handles file uploads at /api/trim
+                const response = await fetch("/api/trim", {
+                    method: "POST",
+                    body: formData
+                });
+
+                const data = await response.json();
+                if (data.error) throw new Error(data.error);
+
+                // If the backend creates a job for the uploaded file, poll it
+                if (data.job_id) {
+                    pollJobProgress(data.job_id);
+                }
+
+            } catch (error) {
+                alert("Upload Error: " + error.message);
+                if (tray) tray.classList.add("hidden");
+            } finally {
+                // Clear the input so the user can select the same file again if needed
+                e.target.value = ""; 
+            }
+        });
     }
 });
