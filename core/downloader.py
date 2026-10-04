@@ -8,6 +8,7 @@ Why this is more reliable than the old version:
   * Clear, actionable messages for the real-world failures (bot check, 403, outdated yt-dlp).
   * Unsafe URLs (localhost / private network) are refused -- required before this is a website.
 """
+import os
 import glob
 import ipaddress
 import re
@@ -97,33 +98,37 @@ def ytdlp_version_warning():
 YT_CLIENT_CHAIN = ["tv", "tv_simply", "android_vr", "web_safari", "mweb"]
 
 
-def _base_opts(client: str | None = None) -> dict:
+
+
+def _base_opts() -> dict:
+    # Force the absolute path to the root folder where cookies.txt lives
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    cookie_path = os.path.join(base_dir, "cookies.txt")
+
     o = {
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
-        "retries": 10,
+        "quiet": True, 
+        "no_warnings": True, 
+        "noplaylist": True, 
+        "retries": 10, 
         "fragment_retries": 10,
-        "socket_timeout": 30,
-        "concurrent_fragment_downloads": 4,
+        "socket_timeout": 30, 
+        "concurrent_fragment_downloads": 4, 
         "windowsfilenames": True,
         "noprogress": True,
-        # Let yt-dlp solve YouTube's JS challenges (needs deno installed)
-        "js_runtimes": {"deno": {}},
         "extractor_args": {
-            "youtube": [f"player_client={client or YT_CLIENT_CHAIN[0]}"],
+            "youtube": ["player_client=tv", "player_skip=webpage"]
         },
-        # Force IPv4 (YouTube often flags IPv6 ranges)
         "source_address": "0.0.0.0",
+        "prefer_insecure": True
     }
-
-    # Cookies from a logged-in browser are the most reliable bot-check fix
-    if config.COOKIES_FROM_BROWSER:
+    
+    # Check if the file exists at the absolute path and use it
+    if os.path.isfile(cookie_path):
+        o["cookiefile"] = cookie_path
+    elif config.COOKIES_FROM_BROWSER:
         o["cookiesfrombrowser"] = (config.COOKIES_FROM_BROWSER,)
-    elif Path(config.COOKIES_FILE).is_file():
-        o["cookiefile"] = config.COOKIES_FILE
+        
     return o
-
 def _safe_title(t: str) -> str:
     t = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "", t or "download").strip(" .")
     return (t or "download")[:120]
