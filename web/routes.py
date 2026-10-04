@@ -5,7 +5,7 @@ import urllib.parse
 from pathlib import Path
 
 from flask import Blueprint, current_app, jsonify, render_template, request, send_from_directory
-from werkzeug.exceptions import RequestEntityTooLarge
+from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 
 import config
@@ -20,6 +20,9 @@ from core.trim import EXTRACT_FORMATS, trim_media
 
 bp = Blueprint("web", __name__)
 ALLOWED = config.AUDIO_EXTS | config.VIDEO_EXTS
+
+_JOB_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_FORMAT_ID_RE = re.compile(r"^[\w.\-=]{1,64}$")   # plain yt-dlp format ids only, never selector syntax
 
 
 def jobs():
@@ -40,6 +43,15 @@ def _too_big(e):
     return _err(f"File too large (limit {config.MAX_UPLOAD_MB} MB).", 413)
 
 
+@bp.app_errorhandler(Exception)
+def _unexpected(e):
+    """Always answer with JSON so the front-end never chokes on an HTML error page."""
+    if isinstance(e, HTTPException):
+        return _err(e.description or e.name, e.code or 500)
+    current_app.logger.exception("Unhandled error")
+    return _err("Something went wrong on the server. Please try again.", 500)
+
+
 def _save_upload(job_id: str) -> Path:
     f = request.files.get("file")
     if not f or not f.filename:
@@ -56,7 +68,12 @@ def _save_upload(job_id: str) -> Path:
 
 def _num(name, default=None):
     v = request.form.get(name, request.args.get(name))
-    return default if v in (None, "") else float(v)
+    if v in (None, ""):
+        return default
+    try:
+        return float(v)
+    except ValueError:
+        raise MediaError(f"Invalid number for '{name}'.")
 
 
 def _flag(name):
@@ -65,6 +82,7 @@ def _flag(name):
 
 def _start_job(kind, work):
     """work(job, in_path|None, out_dir) -> result dict (must contain 'file')."""
+    cleanup_old_files()
     job_id = jobs().new_id()
     out_dir = config.OUTPUT_DIR / job_id
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -72,8 +90,9 @@ def _start_job(kind, work):
 
     def fn(job):
         res = work(job, in_path, out_dir)
-        # FIXED: URL-encode the filename so spaces and hashtags don't break the browser redirect
-        safe_name = urllib.parse.quote(res['file'])
+        # URL-encode the filename so spaces, '#', '&' etc. survive the browser round trip.
+        # res["file"] must be the REAL name on disk (core/pipeline.py: use downloader's "filename").
+        safe_name = urllib.parse.quote(res["file"])
         res["url"] = f"/files/{job_id}/{safe_name}"
         res["size_human"] = human_size((out_dir / res["file"]).stat().st_size)
         res.pop("path", None)
@@ -93,13 +112,17 @@ def index():
 
 @bp.get("/api/health")
 def health():
-    import shutil as sh
     try:
         import yt_dlp
         ytv = yt_dlp.version.__version__
     except Exception:
         ytv = None
-    return jsonify({"ffmpeg": bool(sh.which("ffmpeg")), "yt_dlp": ytv, "warning": downloader.ytdlp_version_warning()})
+    return jsonify({
+        "ffmpeg": bool(shutil.which("ffmpeg")),
+        "yt_dlp": ytv,
+        "warning": downloader.ytdlp_version_warning(),
+        **downloader.diagnostics(),      # js_runtime, ejs, cookies, proxy, pot_provider (booleans/names only)
+    })
 
 
 # ------------------------------------------------------------------ features
@@ -165,21 +188,33 @@ def api_download():
     kind = d.get("kind", "video")
     if kind not in ("video", "audio"):
         raise MediaError("Invalid download type.")
-    
-    height = int(d.get("height")) if d.get("height") else None
-    format_id = d.get("format_id")
-    
+
+    height = None
+    if d.get("height"):
+        try:
+            height = int(d.get("height"))
+        except (TypeError, ValueError):
+            raise MediaError("Invalid video height.")
+        if not 100 <= height <= 4320:
+            raise MediaError("Invalid video height.")
+
+    format_id = d.get("format_id") or None
+    if format_id is not None:
+        format_id = str(format_id)
+        if not _FORMAT_ID_RE.match(format_id):
+            raise MediaError("Invalid format.")
+
     start = parse_time(d.get("start", "")) if str(d.get("start", "")).strip() else None
     end = parse_time(d.get("end", "")) if str(d.get("end", "")).strip() else None
     if start is not None and end is not None and end <= start:
         raise MediaError("End time must be after the start time.")
-        
+
     fmt, preset = d.get("fmt", "mp3"), d.get("preset", "balanced")
     if fmt not in FORMATS or preset not in PRESETS:
         raise MediaError("Unknown format or quality preset.")
 
     def work(job, _in, out_dir):
-        return run_download(job.update, lambda: job.cancelled, out_dir, url, kind, 
+        return run_download(job.update, lambda: job.cancelled, out_dir, url, kind,
                             height=height, format_id=format_id, start=start, end=end,
                             audio_fmt=fmt, preset=preset, message=lambda m: job.update(message=m))
 
@@ -199,18 +234,20 @@ def job_cancel(job_id):
     return jsonify({"ok": bool(job)})
 
 
-def extract_with_fallback(url: str, download: bool = False, extra: dict | None = None):
-    """Try each YouTube client until one gets past the bot check."""
-    last_err = None
-    for client in YT_CLIENT_CHAIN:
-        opts = _base_opts(client)
-        if extra:
-            opts.update(extra)
-        try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                return ydl.extract_info(url, download=download)
-        except Exception as e:  # noqa: BLE001
-            last_err = e
-            if "Sign in to confirm" not in str(e) and "bot" not in str(e).lower():
-                raise  # a different error; don't keep retrying
-    raise last_err
+@bp.get("/files/<job_id>/<path:name>")
+def get_file(job_id, name):
+    """Serve a finished file by its exact name. (This route was missing from the uploaded file.)"""
+    cleanup_old_files()
+    if not _JOB_ID_RE.match(job_id):
+        return _err("File not found on server.", 404)
+    root = config.OUTPUT_DIR.resolve()
+    job_dir = (root / job_id).resolve()
+    if job_dir.parent != root or not job_dir.is_dir():
+        return _err("File not found on server (it may have expired).", 404)
+    if not (job_dir / name).is_file():
+        # Log exactly what was asked vs what exists, so a name mismatch is visible in Render logs.
+        current_app.logger.warning("404 file: asked=%r, on disk=%r", name,
+                                   sorted(f.name for f in job_dir.iterdir()))
+        return _err("File not found on server.", 404)
+    # send_from_directory blocks path traversal and supports Range requests (needed for video playback).
+    return send_from_directory(job_dir, name, as_attachment=request.args.get("play") != "1")
