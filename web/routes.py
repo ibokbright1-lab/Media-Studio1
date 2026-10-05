@@ -1,15 +1,16 @@
 """HTTP layer: validates input, starts jobs, serves results. All real work lives in core/."""
+import os
 import re
 import shutil
 import urllib.parse
 from pathlib import Path
 
-from flask import Blueprint, current_app, jsonify, render_template, request, send_from_directory
+from flask import Blueprint, current_app, jsonify, redirect, render_template, request, send_from_directory
 from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 
 import config
-from core import downloader, silence
+from core import downloader, relay, silence
 from core.compress import FORMATS, PRESETS, compress_audio
 from core.errors import MediaError
 from core.ffmpeg_utils import human_size, probe
@@ -50,6 +51,51 @@ def _unexpected(e):
         return _err(e.description or e.name, e.code or 500)
     current_app.logger.exception("Unhandled error")
     return _err("Something went wrong on the server. Please try again.", 500)
+
+
+HOME_MODE = os.getenv("HOME_MODE") == "1"     # set ONLY on the home computer
+
+
+@bp.before_request
+def _home_guard():
+    """On the home machine only the relay (holding the shared key) may use the API; no web UI."""
+    if not HOME_MODE:
+        return None
+    if request.path == "/":
+        return _err("Not found.", 404)
+    if request.path.startswith("/api/") and not relay.check_key(request.headers.get("X-Relay-Key")):
+        return _err("Forbidden.", 403)
+    return None
+
+
+@bp.after_request
+def _cors_files(resp):
+    """Lets the browser fetch files from the home server after Render redirects it there."""
+    origin = os.getenv("CORS_ORIGIN")
+    if origin and request.path.startswith("/files/"):
+        resp.headers["Access-Control-Allow-Origin"] = origin
+        resp.headers["Access-Control-Expose-Headers"] = "Content-Disposition, Content-Length"
+    return resp
+
+
+def _relay_json(method, path, payload=None, timeout=20):
+    """Forward to the home server. Returns (code, body), or None if it is unreachable (fall back)."""
+    try:
+        return relay.call(method, path, payload, timeout=timeout)
+    except relay.RelayDown as e:
+        current_app.logger.warning("Home relay unreachable (%s); falling back to local.", e)
+        return None
+
+
+def _remote_job(method, job_id, suffix=""):
+    if not _JOB_ID_RE.match(job_id):
+        return _err("Job not found (it may have expired).", 404)
+    try:
+        code, body = relay.call(method, f"/api/jobs/{relay.strip_prefix(job_id)}{suffix}",
+                                {} if method == "POST" else None, timeout=15)
+    except relay.RelayDown:
+        return _err("The download server is unreachable right now. Please try again.", 503)
+    return jsonify(relay.rewrite_urls(body)), code
 
 
 def _save_upload(job_id: str) -> Path:
@@ -121,6 +167,7 @@ def health():
         "ffmpeg": bool(shutil.which("ffmpeg")),
         "yt_dlp": ytv,
         "warning": downloader.ytdlp_version_warning(),
+        "home_relay": relay.enabled(),    # True = Render currently sees your home server online
         **downloader.diagnostics(),      # js_runtime, ejs, cookies, proxy, pot_provider (booleans/names only)
     })
 
@@ -178,7 +225,13 @@ def api_trim():
 @bp.post("/api/info")
 def api_info():
     d = request.get_json(silent=True) or request.form
-    return jsonify(downloader.fetch_info(d.get("url", "")))
+    url = d.get("url", "")
+    if not HOME_MODE and relay.enabled() and downloader.is_youtube(url):
+        downloader.validate_url(url)
+        r = _relay_json("POST", "/api/info", {"url": url}, timeout=60)
+        if r:
+            return jsonify(r[1]), r[0]
+    return jsonify(downloader.fetch_info(url))
 
 
 @bp.post("/api/download")
@@ -204,14 +257,27 @@ def api_download():
         if not _FORMAT_ID_RE.match(format_id):
             raise MediaError("Invalid format.")
 
-    start = parse_time(d.get("start", "")) if str(d.get("start", "")).strip() else None
-    end = parse_time(d.get("end", "")) if str(d.get("end", "")).strip() else None
+    def _opt_time(v):
+        return None if v is None or not str(v).strip() else parse_time(v)
+
+    start = _opt_time(d.get("start"))
+    end = _opt_time(d.get("end"))
     if start is not None and end is not None and end <= start:
         raise MediaError("End time must be after the start time.")
 
     fmt, preset = d.get("fmt", "mp3"), d.get("preset", "balanced")
     if fmt not in FORMATS or preset not in PRESETS:
         raise MediaError("Unknown format or quality preset.")
+
+    if not HOME_MODE and relay.enabled() and downloader.is_youtube(url):
+        payload = {k: d.get(k) for k in ("url", "kind", "height", "format_id", "start", "end", "fmt", "preset")
+                   if d.get(k) is not None}
+        r = _relay_json("POST", "/api/download", payload)
+        if r:
+            code, body = r
+            if code == 200 and body.get("job_id"):
+                return jsonify({"job_id": relay.PREFIX + body["job_id"]})
+            return jsonify(body), code
 
     def work(job, _in, out_dir):
         return run_download(job.update, lambda: job.cancelled, out_dir, url, kind,
@@ -222,14 +288,29 @@ def api_download():
 
 
 # ------------------------------------------------------------------ jobs / files
+@bp.post("/api/relay/register")
+def relay_register():
+    """Heartbeat from the home agent: tells Render the current tunnel URL."""
+    if not relay.check_key(request.headers.get("X-Relay-Key")):
+        return _err("Forbidden.", 403)
+    d = request.get_json(silent=True) or {}
+    if not relay.register(d.get("url")):
+        return _err("Invalid relay URL.", 400)
+    return jsonify({"ok": True})
+
+
 @bp.get("/api/jobs/<job_id>")
 def job_status(job_id):
+    if relay.is_remote_id(job_id):
+        return _remote_job("GET", job_id)
     job = jobs().get(job_id)
     return jsonify(job.public()) if job else _err("Job not found (it may have expired).", 404)
 
 
 @bp.post("/api/jobs/<job_id>/cancel")
 def job_cancel(job_id):
+    if relay.is_remote_id(job_id):
+        return _remote_job("POST", job_id, "/cancel")
     job = jobs().cancel(job_id)
     return jsonify({"ok": bool(job)})
 
@@ -237,6 +318,15 @@ def job_cancel(job_id):
 @bp.get("/files/<job_id>/<path:name>")
 def get_file(job_id, name):
     """Serve a finished file by its exact name. (This route was missing from the uploaded file.)"""
+    if relay.is_remote_id(job_id):
+        base = relay.home_url()
+        real = relay.strip_prefix(job_id)
+        if not base or not _JOB_ID_RE.match(real):
+            return _err("File not found on server.", 404)
+        target = f"{base}/files/{real}/{urllib.parse.quote(name)}"
+        if request.args.get("play") == "1":
+            target += "?play=1"
+        return redirect(target, 302)
     cleanup_old_files()
     if not _JOB_ID_RE.match(job_id):
         return _err("File not found on server.", 404)
