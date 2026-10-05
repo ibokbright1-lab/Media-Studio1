@@ -357,4 +357,74 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // Make sure this final bracket is still at the absolute bottom of the file!
 });
+// =====================================================================
+    // 7. HISTORY MANAGEMENT (LOCAL STORAGE)
+    // =====================================================================
+    const historyGrid = document.getElementById("history-grid");
+    const emptyState = document.getElementById("history-empty-state");
+    const btnClearHistory = document.getElementById("btn-clear-history");
+
+    // Save a completed download to the browser's local memory
+    window.saveToHistory = function(item) {
+        let history = JSON.parse(localStorage.getItem("mediaHistory")) || [];
+        history.unshift(item); // Add to top
+        if (history.length > 20) history.pop(); // Keep only last 20
+        localStorage.setItem("mediaHistory", JSON.stringify(history));
+        renderHistory(); 
+    };
+
+    // Draw the history items on the screen
+    function renderHistory() {
+        if (!historyGrid || !emptyState) return;
+        
+        const history = JSON.parse(localStorage.getItem("mediaHistory")) || [];
+        
+        if (history.length === 0) {
+            // Show the elegant empty state you designed
+            emptyState.classList.remove("hidden");
+            historyGrid.innerHTML = "";
+            if (btnClearHistory) btnClearHistory.classList.add("hidden");
+            return;
+        }
+
+        // Hide empty state and show the grid
+        emptyState.classList.add("hidden");
+        if (btnClearHistory) btnClearHistory.classList.remove("hidden");
+
+        // Generate cards using your 'glass-panel' style
+        historyGrid.innerHTML = history.map((item) => `
+            <div class="glass-panel" style="padding: 15px; display: flex; flex-direction: column; gap: 10px; text-align: left; background: var(--card-bg, rgba(30, 30, 46, 0.6));">
+                <div style="display: flex; justify-content: space-between; align-items: start;">
+                    <strong style="color: white; font-size: 0.95rem; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${item.title}</strong>
+                    <span style="background: ${item.type === 'Audio' ? 'rgba(139, 92, 246, 0.2)' : 'rgba(79, 140, 255, 0.2)'}; color: ${item.type === 'Audio' ? '#8b5cf6' : '#4f8cff'}; font-size: 0.7rem; padding: 4px 8px; border-radius: 6px; font-weight: bold; border: 1px solid ${item.type === 'Audio' ? 'rgba(139, 92, 246, 0.3)' : 'rgba(79, 140, 255, 0.3)'};">${item.type}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: auto;">
+                    <span style="color: var(--muted); font-size: 0.8rem;">${item.date}</span>
+                    <a href="${item.url}" download class="btn-primary" style="padding: 8px 14px; font-size: 0.85rem; text-decoration: none; width: auto;">Download Again</a>
+                </div>
+            </div>
+        `).join("");
+    }
+
+    // Clear all history
+    if (btnClearHistory) {
+        btnClearHistory.addEventListener("click", () => {
+            if (confirm("Are you sure you want to clear your download history?")) {
+                localStorage.removeItem("mediaHistory");
+                renderHistory();
+            }
+        });
+    }
+
+    // Refresh history grid whenever the History tab is clicked
+    document.querySelectorAll(".nav-link").forEach(link => {
+        link.addEventListener("click", (e) => {
+            if (e.currentTarget.getAttribute("data-target") === "history-section") {
+                renderHistory();
+            }
+        });
+    });
+
+    // Run once on page load
+    renderHistory();
 
