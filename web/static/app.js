@@ -260,7 +260,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // =====================================================================
-    // 6. THE STUDIO (UPLOAD LOCAL FILE WITH ON-SCREEN PREVIEW & WAIT)
+    // 6. THE STUDIO (UPLOAD LOCAL FILE WITH BULLETPROOF PREVIEW)
     // =====================================================================
     const localMediaUpload = document.getElementById("local-media-upload");
     let selectedLocalFile = null; 
@@ -270,21 +270,36 @@ document.addEventListener("DOMContentLoaded", () => {
             selectedLocalFile = e.target.files[0];
             if (!selectedLocalFile) return;
 
-            const dropzone = document.querySelector(".studio-dropzone");
-            if (dropzone) {
+            // BULLETPROOF FIX: Automatically grab whatever container holds the file input
+            const container = localMediaUpload.parentElement;
+            
+            if (container) {
                 const fileUrl = URL.createObjectURL(selectedLocalFile);
                 
-                dropzone.innerHTML = `
-                    <p style="margin-bottom: 10px; color: var(--success); font-weight: bold;">File Selected: ${selectedLocalFile.name}</p>
-                    <video controls style="max-width: 100%; border-radius: 8px; border: 1px solid var(--border);">
-                        <source src="${fileUrl}" type="${selectedLocalFile.type}">
-                        Your browser does not support the video tag.
-                    </video>
-                    <p style="margin-top: 10px; font-size: 0.8rem; color: var(--muted);">1. Watch the preview to find your exact times.</p>
-                    <p style="font-size: 0.8rem; color: var(--muted);">2. Type the Start and End times in the boxes above.</p>
-                    <button id="btn-confirm-local-trim" style="margin-top: 15px; width: 100%; padding: 12px; background: var(--primary); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold;">Upload & Cut Local File</button>
+                // Create a dedicated preview box so we don't accidentally delete your HTML
+                let playerBox = document.getElementById("studio-preview-box");
+                if (!playerBox) {
+                    playerBox = document.createElement("div");
+                    playerBox.id = "studio-preview-box";
+                    playerBox.style.marginTop = "20px";
+                    container.appendChild(playerBox);
+                }
+
+                // Inject the player and the final upload button
+                playerBox.innerHTML = `
+                    <div style="background: var(--card-bg, #1e1e2e); padding: 15px; border-radius: 8px; border: 1px solid var(--primary, #4f8cff);">
+                        <p style="margin-bottom: 10px; color: #4f8cff; font-weight: bold;">Ready to Cut: ${selectedLocalFile.name}</p>
+                        <video controls style="width: 100%; max-height: 400px; border-radius: 8px; background: #000;">
+                            <source src="${fileUrl}" type="${selectedLocalFile.type}">
+                            Your browser does not support the video tag.
+                        </video>
+                        <p style="margin-top: 10px; font-size: 0.85rem; color: #a1a1aa;">1. Watch the preview to find your exact times.</p>
+                        <p style="font-size: 0.85rem; color: #a1a1aa; margin-bottom: 15px;">2. Type the Start and End times in the boxes above.</p>
+                        <button id="btn-confirm-local-trim" style="width: 100%; padding: 12px; background: #4f8cff; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 1rem;">Upload & Cut Local File</button>
+                    </div>
                 `;
 
+                // Handle the Confirm Upload Button
                 const confirmBtn = document.getElementById("btn-confirm-local-trim");
                 confirmBtn.addEventListener("click", async (btnEvent) => {
                     const start = document.getElementById("trim-start") ? document.getElementById("trim-start").value : "";
@@ -334,11 +349,13 @@ document.addEventListener("DOMContentLoaded", () => {
                         btnEvent.target.textContent = "Upload & Cut Local File";
                     }
                 });
+            } else {
+                alert("Error: Could not find the container to place the video player.");
             }
-            
-            e.target.value = ""; 
         });
     }
 
+// Make sure this final bracket is still at the absolute bottom of the file!
+});
 // FIXED: This final bracket closes the document.addEventListener from line 1
 });
