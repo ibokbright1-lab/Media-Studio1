@@ -261,77 +261,88 @@ document.addEventListener("DOMContentLoaded", () => {
         }, 1000);
     }
 
-        // =====================================================================
-    // 6. THE STUDIO (UPLOAD LOCAL FILE WITH ON-SCREEN PREVIEW)
+            // =====================================================================
+    // 6. THE STUDIO (UPLOAD LOCAL FILE WITH ON-SCREEN PREVIEW & WAIT)
     // =====================================================================
     const localMediaUpload = document.getElementById("local-media-upload");
+    let selectedLocalFile = null; // Store the file globally so the button can access it
 
     if (localMediaUpload) {
-        localMediaUpload.addEventListener("change", async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
+        localMediaUpload.addEventListener("change", (e) => {
+            selectedLocalFile = e.target.files[0];
+            if (!selectedLocalFile) return;
 
-            // 1. CREATE THE ON-SCREEN VIDEO PREVIEW
-            // This grabs the dropzone box and injects a video player right into it
+            // STEP 1: CREATE THE ON-SCREEN VIDEO PREVIEW AND WAIT
             const dropzone = document.querySelector(".studio-dropzone");
             if (dropzone) {
-                // Generate a temporary local URL so the browser can play the file
-                const fileUrl = URL.createObjectURL(file);
+                const fileUrl = URL.createObjectURL(selectedLocalFile);
                 
-                // Replace the "Browse Files" text with a functional video player
+                // Replace the dropzone with the video player and a dedicated action button
                 dropzone.innerHTML = `
-                    <p style="margin-bottom: 10px; color: var(--success); font-weight: bold;">File Selected: ${file.name}</p>
+                    <p style="margin-bottom: 10px; color: var(--success); font-weight: bold;">File Selected: ${selectedLocalFile.name}</p>
                     <video controls style="max-width: 100%; border-radius: 8px; border: 1px solid var(--border);">
-                        <source src="${fileUrl}" type="${file.type}">
+                        <source src="${fileUrl}" type="${selectedLocalFile.type}">
                         Your browser does not support the video tag.
                     </video>
-                    <p style="margin-top: 10px; font-size: 0.8rem; color: var(--muted);">Watch the preview above to find your exact Start and End times.</p>
+                    <p style="margin-top: 10px; font-size: 0.8rem; color: var(--muted);">1. Watch the preview to find your exact times.</p>
+                    <p style="font-size: 0.8rem; color: var(--muted);">2. Type the Start and End times in the boxes above.</p>
+                    <button id="btn-confirm-local-trim" style="margin-top: 15px; width: 100%; padding: 12px; background: var(--primary); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold;">Upload & Cut Local File</button>
                 `;
-            }
 
-            // 2. PREPARE THE TIMESTAMPS FOR UPLOAD
-            const start = document.getElementById("trim-start") ? document.getElementById("trim-start").value : "";
-            const end = document.getElementById("trim-end") ? document.getElementById("trim-end").value : "";
+                // STEP 2: WAIT FOR THE USER TO CLICK THE NEW BUTTON BEFORE UPLOADING
+                const confirmBtn = document.getElementById("btn-confirm-local-trim");
+                confirmBtn.addEventListener("click", async (btnEvent) => {
+                    const start = document.getElementById("trim-start") ? document.getElementById("trim-start").value : "";
+                    const end = document.getElementById("trim-end") ? document.getElementById("trim-end").value : "";
 
-            const formData = new FormData();
-            formData.append("file", file);
-            if (start) formData.append("start", start);
-            if (end) formData.append("end", end);
-            
-            // 3. TRIGGER THE PROGRESS BAR
-            const tray = document.getElementById("progress-tray");
-            const statusText = document.getElementById("progress-status");
-            const percentText = document.getElementById("progress-percent");
-            const barFill = document.getElementById("progress-bar-fill");
+                    if (!start || !end) {
+                        return alert("Please enter both Start and End times before cutting.");
+                    }
 
-            if (tray) {
-                tray.classList.remove("hidden");
-                statusText.textContent = `Uploading ${file.name}...`;
-                percentText.textContent = "Uploading...";
-                barFill.style.background = "linear-gradient(90deg, #4f8cff, #8b5cf6)";
-                barFill.style.width = "30%";
-            }
+                    btnEvent.target.disabled = true;
+                    btnEvent.target.textContent = "Uploading & Cutting...";
 
-            // 4. SEND TO BACKEND
-            try {
-                const response = await fetch("/api/trim", {
-                    method: "POST",
-                    body: formData
+                    const formData = new FormData();
+                    formData.append("file", selectedLocalFile);
+                    formData.append("start", start);
+                    formData.append("end", end);
+                    
+                    const tray = document.getElementById("progress-tray");
+                    const statusText = document.getElementById("progress-status");
+                    const percentText = document.getElementById("progress-percent");
+                    const barFill = document.getElementById("progress-bar-fill");
+
+                    if (tray) {
+                        tray.classList.remove("hidden");
+                        statusText.textContent = `Uploading ${selectedLocalFile.name}...`;
+                        percentText.textContent = "Uploading...";
+                        barFill.style.background = "linear-gradient(90deg, #4f8cff, #8b5cf6)";
+                        barFill.style.width = "30%";
+                    }
+
+                    try {
+                        const response = await fetch("/api/trim", {
+                            method: "POST",
+                            body: formData
+                        });
+
+                        const data = await response.json();
+                        if (data.error) throw new Error(data.error);
+
+                        if (data.job_id) {
+                            pollJobProgress(data.job_id);
+                        }
+                    } catch (error) {
+                        alert("Upload Error: " + error.message);
+                        if (tray) tray.classList.add("hidden");
+                        btnEvent.target.disabled = false;
+                        btnEvent.target.textContent = "Upload & Cut Local File";
+                    }
                 });
-
-                const data = await response.json();
-                if (data.error) throw new Error(data.error);
-
-                if (data.job_id) {
-                    pollJobProgress(data.job_id);
-                }
-
-            } catch (error) {
-                alert("Upload Error: " + error.message);
-                if (tray) tray.classList.add("hidden");
-            } finally {
-                e.target.value = ""; 
             }
+            
+            // Clear the hidden file input so the user can select a different file if needed
+            e.target.value = ""; 
         });
     }
-});
+
