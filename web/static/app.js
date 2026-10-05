@@ -208,7 +208,12 @@ document.addEventListener("DOMContentLoaded", () => {
                     statusText.textContent = "Complete!";
                     barFill.style.background = "var(--success)"; 
                     
-                    window.location.href = data.url;
+                    console.log("job result:", data);
+if (!data.url) {
+    alert("Finished, but no download link came back: " + JSON.stringify(data));
+} else {
+    window.location.href = data.url;
+}
 
                     setTimeout(() => {
                         tray.classList.add("hidden");
