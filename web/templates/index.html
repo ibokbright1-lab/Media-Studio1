@@ -853,62 +853,43 @@
 
 
 
-                <!-- =================================
-                     HISTORY
-                ================================== -->
+               <!-- =================================
+        HISTORY
+================================== -->
+<section id="history-section" class="app-section hidden">
+    <div class="hero-header" style="display: flex; justify-content: space-between; align-items: flex-end;">
+        <div>
+            <div class="eyebrow">
+                <span class="eyebrow-dot"></span>
+                ACTIVITY
+            </div>
+            <h1>
+                Your <span>history.</span>
+            </h1>
+            <p>
+                Recently processed media will appear here.
+            </p>
+        </div>
+        
+        <!-- NEW: Clear History Button matching your UI -->
+        <button id="btn-clear-history" class="btn-secondary hidden" style="background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.2); padding: 8px 16px; border-radius: 8px; font-weight: bold; cursor: pointer;">
+            Clear History
+        </button>
+    </div>
 
-                <section
-                    id="history-section"
-                    class="app-section hidden"
-                >
+    <!-- The beautiful empty state you already built -->
+    <div id="history-empty-state" class="empty-state glass-panel">
+        <div class="empty-icon">◷</div>
+        <h3>No activity yet</h3>
+        <p>Your downloaded and processed media will appear here.</p>
+        <button class="btn-primary nav-link" data-target="video-section" type="button">
+            Start downloading
+        </button>
+    </div>
 
-                    <div class="hero-header">
-
-                        <div>
-
-                            <div class="eyebrow">
-                                <span class="eyebrow-dot"></span>
-                                ACTIVITY
-                            </div>
-
-                            <h1>
-                                Your <span>history.</span>
-                            </h1>
-
-                            <p>
-                                Recently processed media will appear here.
-                            </p>
-
-                        </div>
-
-                    </div>
-
-
-                    <div class="empty-state glass-panel">
-
-                        <div class="empty-icon">
-                            ◷
-                        </div>
-
-                        <h3>No activity yet</h3>
-
-                        <p>
-                            Your downloaded and processed media
-                            will appear here.
-                        </p>
-
-                        <button
-                            class="btn-primary"
-                            data-target="video-section"
-                            type="button"
-                        >
-                            Start downloading
-                        </button>
-
-                    </div>
-
-                </section>
-
+    <!-- NEW: The blank grid where the cards will generate -->
+    <div id="history-grid" style="display: grid; gap: 15px; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); margin-top: 20px;"></div>
+</section>
 
 
                 <!-- =================================
