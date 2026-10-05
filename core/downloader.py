@@ -221,6 +221,9 @@ def _is_youtube(url: str) -> bool:
     return h == "youtu.be" or h.endswith("youtube.com") or h.endswith("youtube-nocookie.com")
 
 
+is_youtube = _is_youtube     # public name used by route.py / relay
+
+
 def _cookie_source():
     """Return the first usable Netscape-format cookie file, or None."""
     candidates = []
@@ -241,6 +244,18 @@ def _cookie_source():
         except OSError:
             continue
     return None
+
+
+def diagnostics() -> dict:
+    """Non-secret server config summary (names/booleans only) for /api/health."""
+    import importlib.util
+    return {
+        "js_runtime": next((r for r in ("deno", "node", "bun", "qjs") if shutil.which(r)), None),
+        "ejs": importlib.util.find_spec("yt_dlp_ejs") is not None,
+        "cookies": bool(_cookie_source()),
+        "proxy": bool(_setting("YT_PROXY")),
+        "pot_provider": bool(_setting("YT_POT_BASE_URL")),
+    }
 
 
 class _YTLogger:
@@ -297,8 +312,8 @@ def _ydl_opts(url: str = "", **extra):
         os.close(fd)
         shutil.copyfile(src, tmp_cookie)
         o["cookiefile"] = tmp_cookie
-    elif getattr(config, "COOKIES_FROM_BROWSER", None):
-        o["cookiesfrombrowser"] = (config.COOKIES_FROM_BROWSER,)   # local use only
+    elif _setting("COOKIES_FROM_BROWSER"):
+        o["cookiesfrombrowser"] = (_setting("COOKIES_FROM_BROWSER"),)   # home machine only
 
     o.update(extra)
     try:
