@@ -38,7 +38,6 @@ document.addEventListener("DOMContentLoaded", () => {
         btn.disabled = true;
 
         try {
-            // FIXED: Send as FormData instead of JSON
             const formData = new FormData();
             formData.append("url", url);
 
@@ -106,7 +105,6 @@ document.addEventListener("DOMContentLoaded", () => {
             btn.textContent = "Starting...";
 
             try {
-                // FIXED: Send as FormData instead of JSON to fix "Invalid URL" error
                 const formData = new FormData();
                 formData.append("url", url);
                 formData.append("kind", kind);
@@ -151,16 +149,16 @@ document.addEventListener("DOMContentLoaded", () => {
             btnTextSpan.textContent = "Starting...";
 
             try {
-              const formData = new FormData();
-formData.append("url", url);
-formData.append("kind", "video");
-formData.append("start", start);
-formData.append("end", end);
+                const formData = new FormData();
+                formData.append("url", url);
+                formData.append("kind", "video");
+                formData.append("start", start);
+                formData.append("end", end);
 
-const response = await fetch("/api/download", {
-    method: "POST",
-    body: formData
-});
+                const response = await fetch("/api/download", {
+                    method: "POST",
+                    body: formData
+                });
                 const data = await response.json();
                 if (data.error) throw new Error(data.error);
 
@@ -208,11 +206,16 @@ const response = await fetch("/api/download", {
                     barFill.style.background = "var(--success)"; 
                     
                     console.log("job result:", data);
-if (!data.url) {
-    alert("Finished, but no download link came back: " + JSON.stringify(data));
-} else {
-    window.location.href = data.url;
-}
+                    
+                    // FIXED: Check both the top-level URL and the nested result URL
+                    const finalUrl = data.url || (data.result && data.result.url);
+                    
+                    if (!finalUrl) {
+                        alert("Finished, but no download link came back: " + JSON.stringify(data));
+                    } else {
+                        // This window.location.href naturally handles the 302 home PC redirect perfectly
+                        window.location.href = finalUrl;
+                    }
 
                     setTimeout(() => {
                         tray.classList.add("hidden");
@@ -251,12 +254,9 @@ if (!data.url) {
             const file = e.target.files[0];
             if (!file) return;
 
-            // Optional: If you have start/end inputs for local files, grab them here.
-            // For now, we will send the file directly to your trimming endpoint.
             const formData = new FormData();
             formData.append("file", file);
             
-            // Activate the global progress tray so the user sees the upload happening
             const tray = document.getElementById("progress-tray");
             const statusText = document.getElementById("progress-status");
             const percentText = document.getElementById("progress-percent");
@@ -267,11 +267,10 @@ if (!data.url) {
                 statusText.textContent = `Uploading ${file.name}...`;
                 percentText.textContent = "Uploading...";
                 barFill.style.background = "linear-gradient(90deg, #4f8cff, #8b5cf6)";
-                barFill.style.width = "50%"; // Fake visual progress for the upload phase
+                barFill.style.width = "50%";
             }
 
             try {
-                // Assuming your backend handles file uploads at /api/trim
                 const response = await fetch("/api/trim", {
                     method: "POST",
                     body: formData
@@ -280,7 +279,6 @@ if (!data.url) {
                 const data = await response.json();
                 if (data.error) throw new Error(data.error);
 
-                // If the backend creates a job for the uploaded file, poll it
                 if (data.job_id) {
                     pollJobProgress(data.job_id);
                 }
@@ -289,7 +287,6 @@ if (!data.url) {
                 alert("Upload Error: " + error.message);
                 if (tray) tray.classList.add("hidden");
             } finally {
-                // Clear the input so the user can select the same file again if needed
                 e.target.value = ""; 
             }
         });
