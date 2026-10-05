@@ -357,5 +357,4 @@ document.addEventListener("DOMContentLoaded", () => {
 
 // Make sure this final bracket is still at the absolute bottom of the file!
 });
-// FIXED: This final bracket closes the document.addEventListener from line 1
-});
+
