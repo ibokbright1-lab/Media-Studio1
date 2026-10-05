@@ -259,7 +259,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }, 1000);
     }
 
-    // =====================================================================
+  // =====================================================================
     // 6. THE STUDIO (UPLOAD LOCAL FILE WITH BULLETPROOF PREVIEW)
     // =====================================================================
     const localMediaUpload = document.getElementById("local-media-upload");
@@ -355,9 +355,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-// Make sure this final bracket is still at the absolute bottom of the file!
-});
-// =====================================================================
+    // =====================================================================
     // 7. HISTORY MANAGEMENT (LOCAL STORAGE)
     // =====================================================================
     const historyGrid = document.getElementById("history-grid");
@@ -428,3 +426,43 @@ document.addEventListener("DOMContentLoaded", () => {
     // Run once on page load
     renderHistory();
 
+    // =====================================================================
+    // 8. SETTINGS & PREFERENCES (LOCAL STORAGE)
+    // =====================================================================
+    const qualitySelect = document.getElementById("setting-quality");
+    const fastToggle = document.getElementById("setting-fast");
+    const locationBtn = document.getElementById("btn-config-location");
+
+    // Load saved settings from the browser's memory, or set defaults
+    const savedSettings = JSON.parse(localStorage.getItem("mediaSettings")) || { 
+        quality: "720p", 
+        fastProcessing: false 
+    };
+
+    // 1. Default Quality Dropdown
+    if (qualitySelect) {
+        qualitySelect.value = savedSettings.quality;
+        qualitySelect.addEventListener("change", (e) => {
+            savedSettings.quality = e.target.value;
+            localStorage.setItem("mediaSettings", JSON.stringify(savedSettings));
+        });
+    }
+
+    // 2. Fast Processing Toggle
+    if (fastToggle) {
+        fastToggle.checked = savedSettings.fastProcessing;
+        fastToggle.addEventListener("change", (e) => {
+            savedSettings.fastProcessing = e.target.checked;
+            localStorage.setItem("mediaSettings", JSON.stringify(savedSettings));
+        });
+    }
+
+    // 3. Download Location Button
+    if (locationBtn) {
+        locationBtn.addEventListener("click", () => {
+            alert("For security reasons, web browsers control exactly where files are saved. To change your default download folder, please check your browser's Settings > Downloads menu.");
+        });
+    }
+
+// THIS is the master closing bracket. It must stay at the absolute bottom of the file!
+});
