@@ -173,7 +173,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-        // =====================================================================
+    // =====================================================================
     // 5. RESILIENT PROGRESS POLLER ENGINE
     // =====================================================================
     function pollJobProgress(jobId) {
@@ -189,13 +189,12 @@ document.addEventListener("DOMContentLoaded", () => {
         barFill.style.width = "0%";
 
         let consecutiveFailures = 0;
-        const MAX_FAILURES = 4; // Tolerate up to 4 consecutive network blips
+        const MAX_FAILURES = 15; // FIXED: Tolerates 15 seconds of mobile connection drops
 
         const interval = setInterval(async () => {
             try {
                 const res = await fetch(`/api/jobs/${jobId}`);
                 
-                // If server is momentarily busy or returns empty response, don't crash
                 if (!res.ok) {
                     throw new Error(`HTTP error ${res.status}`);
                 }
@@ -206,7 +205,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
 
                 const data = JSON.parse(text);
-                consecutiveFailures = 0; // Reset counter on successful poll
+                consecutiveFailures = 0; 
 
                 if (data.error) throw new Error(data.error);
 
@@ -243,7 +242,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 consecutiveFailures++;
                 console.warn(`Polling attempt failed (${consecutiveFailures}/${MAX_FAILURES}):`, error.message);
 
-                // Only fail completely if 4 requests fail in a row
                 if (consecutiveFailures >= MAX_FAILURES) {
                     clearInterval(interval);
                     statusText.textContent = "Error";
@@ -261,23 +259,21 @@ document.addEventListener("DOMContentLoaded", () => {
         }, 1000);
     }
 
-            // =====================================================================
+    // =====================================================================
     // 6. THE STUDIO (UPLOAD LOCAL FILE WITH ON-SCREEN PREVIEW & WAIT)
     // =====================================================================
     const localMediaUpload = document.getElementById("local-media-upload");
-    let selectedLocalFile = null; // Store the file globally so the button can access it
+    let selectedLocalFile = null; 
 
     if (localMediaUpload) {
         localMediaUpload.addEventListener("change", (e) => {
             selectedLocalFile = e.target.files[0];
             if (!selectedLocalFile) return;
 
-            // STEP 1: CREATE THE ON-SCREEN VIDEO PREVIEW AND WAIT
             const dropzone = document.querySelector(".studio-dropzone");
             if (dropzone) {
                 const fileUrl = URL.createObjectURL(selectedLocalFile);
                 
-                // Replace the dropzone with the video player and a dedicated action button
                 dropzone.innerHTML = `
                     <p style="margin-bottom: 10px; color: var(--success); font-weight: bold;">File Selected: ${selectedLocalFile.name}</p>
                     <video controls style="max-width: 100%; border-radius: 8px; border: 1px solid var(--border);">
@@ -289,7 +285,6 @@ document.addEventListener("DOMContentLoaded", () => {
                     <button id="btn-confirm-local-trim" style="margin-top: 15px; width: 100%; padding: 12px; background: var(--primary); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold;">Upload & Cut Local File</button>
                 `;
 
-                // STEP 2: WAIT FOR THE USER TO CLICK THE NEW BUTTON BEFORE UPLOADING
                 const confirmBtn = document.getElementById("btn-confirm-local-trim");
                 confirmBtn.addEventListener("click", async (btnEvent) => {
                     const start = document.getElementById("trim-start") ? document.getElementById("trim-start").value : "";
@@ -341,8 +336,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 });
             }
             
-            // Clear the hidden file input so the user can select a different file if needed
             e.target.value = ""; 
         });
     }
 
+// FIXED: This final bracket closes the document.addEventListener from line 1
+});
