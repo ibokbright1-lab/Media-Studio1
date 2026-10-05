@@ -261,8 +261,8 @@ document.addEventListener("DOMContentLoaded", () => {
         }, 1000);
     }
 
-    // =====================================================================
-    // 6. THE STUDIO (UPLOAD LOCAL FILE)
+        // =====================================================================
+    // 6. THE STUDIO (UPLOAD LOCAL FILE WITH ON-SCREEN PREVIEW)
     // =====================================================================
     const localMediaUpload = document.getElementById("local-media-upload");
 
@@ -271,9 +271,34 @@ document.addEventListener("DOMContentLoaded", () => {
             const file = e.target.files[0];
             if (!file) return;
 
+            // 1. CREATE THE ON-SCREEN VIDEO PREVIEW
+            // This grabs the dropzone box and injects a video player right into it
+            const dropzone = document.querySelector(".studio-dropzone");
+            if (dropzone) {
+                // Generate a temporary local URL so the browser can play the file
+                const fileUrl = URL.createObjectURL(file);
+                
+                // Replace the "Browse Files" text with a functional video player
+                dropzone.innerHTML = `
+                    <p style="margin-bottom: 10px; color: var(--success); font-weight: bold;">File Selected: ${file.name}</p>
+                    <video controls style="max-width: 100%; border-radius: 8px; border: 1px solid var(--border);">
+                        <source src="${fileUrl}" type="${file.type}">
+                        Your browser does not support the video tag.
+                    </video>
+                    <p style="margin-top: 10px; font-size: 0.8rem; color: var(--muted);">Watch the preview above to find your exact Start and End times.</p>
+                `;
+            }
+
+            // 2. PREPARE THE TIMESTAMPS FOR UPLOAD
+            const start = document.getElementById("trim-start") ? document.getElementById("trim-start").value : "";
+            const end = document.getElementById("trim-end") ? document.getElementById("trim-end").value : "";
+
             const formData = new FormData();
             formData.append("file", file);
+            if (start) formData.append("start", start);
+            if (end) formData.append("end", end);
             
+            // 3. TRIGGER THE PROGRESS BAR
             const tray = document.getElementById("progress-tray");
             const statusText = document.getElementById("progress-status");
             const percentText = document.getElementById("progress-percent");
@@ -284,9 +309,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 statusText.textContent = `Uploading ${file.name}...`;
                 percentText.textContent = "Uploading...";
                 barFill.style.background = "linear-gradient(90deg, #4f8cff, #8b5cf6)";
-                barFill.style.width = "50%";
+                barFill.style.width = "30%";
             }
 
+            // 4. SEND TO BACKEND
             try {
                 const response = await fetch("/api/trim", {
                     method: "POST",
@@ -308,4 +334,3 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         });
     }
-});
