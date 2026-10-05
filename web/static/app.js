@@ -151,17 +151,16 @@ document.addEventListener("DOMContentLoaded", () => {
             btnTextSpan.textContent = "Starting...";
 
             try {
-                const formData = new FormData();
-                formData.append("url", url);
-                formData.append("start", start);
-                formData.append("end", end);
-                formData.append("mode", "precise");
+              const formData = new FormData();
+formData.append("url", url);
+formData.append("kind", "video");
+formData.append("start", start);
+formData.append("end", end);
 
-                const response = await fetch("/api/trim", {
-                    method: "POST",
-                    body: formData 
-                });
-
+const response = await fetch("/api/download", {
+    method: "POST",
+    body: formData
+});
                 const data = await response.json();
                 if (data.error) throw new Error(data.error);
 
