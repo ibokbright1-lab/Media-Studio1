@@ -30,13 +30,13 @@ def run_download(update, cancelled, out_dir, url, kind, height=None, format_id=N
     if kind == "audio":
         update(50, f"Converting audio to {audio_fmt.upper()}…")
         
-        # Pass the raw downloaded file to FFmpeg for MP3 conversion
+        # FIXED: Removed 'in_path=' and 'out_dir=' keywords to match the function signature
         comp_res = compress_audio(
-            in_path=downloaded_path,
-            out_dir=out_dir,
-            fmt=audio_fmt, # Defaults to "mp3" from routes.py
+            downloaded_path,
+            out_dir,
+            fmt=audio_fmt,
             preset=preset,
-            on_progress=lambda p: update(50 + (p * 0.5)), # Progress mapping: 50% to 100%
+            on_progress=lambda p: update(50 + (p * 0.5)), 
             cancel=cancelled
         )
         
