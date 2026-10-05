@@ -173,8 +173,8 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // =====================================================================
-    // 5. PROGRESS POLLER ENGINE
+        // =====================================================================
+    // 5. RESILIENT PROGRESS POLLER ENGINE
     // =====================================================================
     function pollJobProgress(jobId) {
         const tray = document.getElementById("progress-tray");
@@ -182,16 +182,31 @@ document.addEventListener("DOMContentLoaded", () => {
         const percentText = document.getElementById("progress-percent");
         const barFill = document.getElementById("progress-bar-fill");
 
-        if(!tray) return;
+        if (!tray) return;
 
         tray.classList.remove("hidden");
         barFill.style.background = "linear-gradient(90deg, #4f8cff, #8b5cf6)"; 
         barFill.style.width = "0%";
 
+        let consecutiveFailures = 0;
+        const MAX_FAILURES = 4; // Tolerate up to 4 consecutive network blips
+
         const interval = setInterval(async () => {
             try {
                 const res = await fetch(`/api/jobs/${jobId}`);
-                const data = await res.json();
+                
+                // If server is momentarily busy or returns empty response, don't crash
+                if (!res.ok) {
+                    throw new Error(`HTTP error ${res.status}`);
+                }
+
+                const text = await res.text();
+                if (!text || !text.trim()) {
+                    throw new Error("Empty response received");
+                }
+
+                const data = JSON.parse(text);
+                consecutiveFailures = 0; // Reset counter on successful poll
 
                 if (data.error) throw new Error(data.error);
 
@@ -205,15 +220,11 @@ document.addEventListener("DOMContentLoaded", () => {
                     statusText.textContent = "Complete!";
                     barFill.style.background = "var(--success)"; 
                     
-                    console.log("job result:", data);
-                    
-                    // FIXED: Check both the top-level URL and the nested result URL
                     const finalUrl = data.url || (data.result && data.result.url);
                     
                     if (!finalUrl) {
-                        alert("Finished, but no download link came back: " + JSON.stringify(data));
+                        alert("Finished, but no download link found in response.");
                     } else {
-                        // This window.location.href naturally handles the 302 home PC redirect perfectly
                         window.location.href = finalUrl;
                     }
 
@@ -229,17 +240,23 @@ document.addEventListener("DOMContentLoaded", () => {
                     throw new Error(data.error || "Processing failed.");
                 }
             } catch (error) {
-                clearInterval(interval);
-                statusText.textContent = "Error";
-                barFill.style.background = "#ef4444"; 
-                alert(error.message);
-                
-                document.querySelectorAll(".btn-download").forEach(b => {
-                    b.disabled = false;
-                    b.textContent = "Download";
-                });
-                
-                setTimeout(() => tray.classList.add("hidden"), 3000);
+                consecutiveFailures++;
+                console.warn(`Polling attempt failed (${consecutiveFailures}/${MAX_FAILURES}):`, error.message);
+
+                // Only fail completely if 4 requests fail in a row
+                if (consecutiveFailures >= MAX_FAILURES) {
+                    clearInterval(interval);
+                    statusText.textContent = "Error";
+                    barFill.style.background = "#ef4444"; 
+                    alert("Connection interrupted: " + error.message);
+                    
+                    document.querySelectorAll(".btn-download").forEach(b => {
+                        b.disabled = false;
+                        b.textContent = "Download";
+                    });
+                    
+                    setTimeout(() => tray.classList.add("hidden"), 3000);
+                }
             }
         }, 1000);
     }
