@@ -189,7 +189,7 @@ document.addEventListener("DOMContentLoaded", () => {
         barFill.style.width = "0%";
 
         let consecutiveFailures = 0;
-        const MAX_FAILURES = 15; // FIXED: Tolerates 15 seconds of mobile connection drops
+        const MAX_FAILURES = 15; // Tolerates 15 seconds of mobile connection drops
 
         const interval = setInterval(async () => {
             try {
@@ -224,6 +224,15 @@ document.addEventListener("DOMContentLoaded", () => {
                     if (!finalUrl) {
                         alert("Finished, but no download link found in response.");
                     } else {
+                        // FIXED: Sync to the History tab before triggering the download
+                        if (typeof window.saveToHistory === "function") {
+                            window.saveToHistory({
+                                title: data.title || (data.result && data.result.title) || "Processed Media File",
+                                url: finalUrl,
+                                type: finalUrl.includes('.mp3') ? 'Audio' : 'Video',
+                                date: new Date().toLocaleDateString()
+                            });
+                        }
                         window.location.href = finalUrl;
                     }
 
@@ -259,7 +268,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }, 1000);
     }
 
-  // =====================================================================
+    // =====================================================================
     // 6. THE STUDIO (UPLOAD LOCAL FILE WITH BULLETPROOF PREVIEW)
     // =====================================================================
     const localMediaUpload = document.getElementById("local-media-upload");
@@ -270,13 +279,11 @@ document.addEventListener("DOMContentLoaded", () => {
             selectedLocalFile = e.target.files[0];
             if (!selectedLocalFile) return;
 
-            // BULLETPROOF FIX: Automatically grab whatever container holds the file input
             const container = localMediaUpload.parentElement;
             
             if (container) {
                 const fileUrl = URL.createObjectURL(selectedLocalFile);
                 
-                // Create a dedicated preview box so we don't accidentally delete your HTML
                 let playerBox = document.getElementById("studio-preview-box");
                 if (!playerBox) {
                     playerBox = document.createElement("div");
@@ -285,7 +292,6 @@ document.addEventListener("DOMContentLoaded", () => {
                     container.appendChild(playerBox);
                 }
 
-                // Inject the player and the final upload button
                 playerBox.innerHTML = `
                     <div style="background: var(--card-bg, #1e1e2e); padding: 15px; border-radius: 8px; border: 1px solid var(--primary, #4f8cff);">
                         <p style="margin-bottom: 10px; color: #4f8cff; font-weight: bold;">Ready to Cut: ${selectedLocalFile.name}</p>
@@ -299,7 +305,6 @@ document.addEventListener("DOMContentLoaded", () => {
                     </div>
                 `;
 
-                // Handle the Confirm Upload Button
                 const confirmBtn = document.getElementById("btn-confirm-local-trim");
                 confirmBtn.addEventListener("click", async (btnEvent) => {
                     const start = document.getElementById("trim-start") ? document.getElementById("trim-start").value : "";
@@ -362,34 +367,29 @@ document.addEventListener("DOMContentLoaded", () => {
     const emptyState = document.getElementById("history-empty-state");
     const btnClearHistory = document.getElementById("btn-clear-history");
 
-    // Save a completed download to the browser's local memory
     window.saveToHistory = function(item) {
         let history = JSON.parse(localStorage.getItem("mediaHistory")) || [];
-        history.unshift(item); // Add to top
-        if (history.length > 20) history.pop(); // Keep only last 20
+        history.unshift(item); 
+        if (history.length > 20) history.pop(); 
         localStorage.setItem("mediaHistory", JSON.stringify(history));
         renderHistory(); 
     };
 
-    // Draw the history items on the screen
     function renderHistory() {
         if (!historyGrid || !emptyState) return;
         
         const history = JSON.parse(localStorage.getItem("mediaHistory")) || [];
         
         if (history.length === 0) {
-            // Show the elegant empty state you designed
             emptyState.classList.remove("hidden");
             historyGrid.innerHTML = "";
             if (btnClearHistory) btnClearHistory.classList.add("hidden");
             return;
         }
 
-        // Hide empty state and show the grid
         emptyState.classList.add("hidden");
         if (btnClearHistory) btnClearHistory.classList.remove("hidden");
 
-        // Generate cards using your 'glass-panel' style
         historyGrid.innerHTML = history.map((item) => `
             <div class="glass-panel" style="padding: 15px; display: flex; flex-direction: column; gap: 10px; text-align: left; background: var(--card-bg, rgba(30, 30, 46, 0.6));">
                 <div style="display: flex; justify-content: space-between; align-items: start;">
@@ -404,7 +404,6 @@ document.addEventListener("DOMContentLoaded", () => {
         `).join("");
     }
 
-    // Clear all history
     if (btnClearHistory) {
         btnClearHistory.addEventListener("click", () => {
             if (confirm("Are you sure you want to clear your download history?")) {
@@ -414,7 +413,6 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // Refresh history grid whenever the History tab is clicked
     document.querySelectorAll(".nav-link").forEach(link => {
         link.addEventListener("click", (e) => {
             if (e.currentTarget.getAttribute("data-target") === "history-section") {
@@ -423,7 +421,6 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
-    // Run once on page load
     renderHistory();
 
     // =====================================================================
@@ -433,13 +430,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const fastToggle = document.getElementById("setting-fast");
     const locationBtn = document.getElementById("btn-config-location");
 
-    // Load saved settings from the browser's memory, or set defaults
     const savedSettings = JSON.parse(localStorage.getItem("mediaSettings")) || { 
         quality: "720p", 
         fastProcessing: false 
     };
 
-    // 1. Default Quality Dropdown
     if (qualitySelect) {
         qualitySelect.value = savedSettings.quality;
         qualitySelect.addEventListener("change", (e) => {
@@ -448,7 +443,6 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // 2. Fast Processing Toggle
     if (fastToggle) {
         fastToggle.checked = savedSettings.fastProcessing;
         fastToggle.addEventListener("change", (e) => {
@@ -457,7 +451,6 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    // 3. Download Location Button
     if (locationBtn) {
         locationBtn.addEventListener("click", () => {
             alert("For security reasons, web browsers control exactly where files are saved. To change your default download folder, please check your browser's Settings > Downloads menu.");
