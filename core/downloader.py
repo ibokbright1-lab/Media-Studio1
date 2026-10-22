@@ -91,10 +91,11 @@ def validate_url(url: str) -> str:
 
 def video_selector(height=None) -> str:
     h = f"[height<={int(height)}]" if height else ""
-    return (f"bv*{h}[vcodec^=avc1]+ba[ext=m4a]/"      # best case: plays everywhere, no re-encode
-            f"bv*{h}[ext=mp4]+ba[ext=m4a]/"
+    # STRICT MP4 FIX: Force the selector to explicitly require mp4 extensions
+    return (f"bv*{h}[ext=mp4]+ba[ext=m4a]/"
             f"b{h}[ext=mp4]/"
-            f"bv*{h}+ba/b{h}/b")                       # never dead-ends
+            f"bestvideo[ext=mp4]+bestaudio[ext=m4a]/"
+            f"best[ext=mp4]/best")
 
 
 def _classify(raw: str) -> str:
@@ -134,7 +135,6 @@ def friendly_error(raw: str) -> str:
     raw = _ANSI.sub("", raw or "")
     kind = _classify(raw)
 
-    # Operator hints go to the server log, not to the website visitor.
     if kind == "bot":
         log.error("[operator] YouTube bot check. This is almost always the server's cloud IP. Fix: set "
                   "YT_PROXY (residential), run the bgutil PO-token provider (YT_POT_BASE_URL), and use "
@@ -184,7 +184,6 @@ def _yt():
 
 
 def ytdlp_version_warning():
-    """YouTube changes constantly; an old yt-dlp is the #1 cause of broken downloads."""
     try:
         from yt_dlp.version import __version__ as v
         d = datetime.strptime(".".join(v.split(".")[:3]), "%Y.%m.%d")
@@ -199,7 +198,6 @@ _checked = False
 
 
 def _startup_checks():
-    """One-time sanity log so Render logs explain failures before they happen."""
     global _checked
     if _checked:
         return
@@ -221,11 +219,10 @@ def _is_youtube(url: str) -> bool:
     return h == "youtu.be" or h.endswith("youtube.com") or h.endswith("youtube-nocookie.com")
 
 
-is_youtube = _is_youtube     # public name used by route.py / relay
+is_youtube = _is_youtube
 
 
 def _cookie_source():
-    """Return the first usable Netscape-format cookie file, or None."""
     candidates = []
     env = os.getenv("YT_COOKIES_FILE")
     if env:
@@ -247,7 +244,6 @@ def _cookie_source():
 
 
 def diagnostics() -> dict:
-    """Non-secret server config summary (names/booleans only) for /api/health."""
     import importlib.util
     return {
         "js_runtime": next((r for r in ("deno", "node", "bun", "qjs") if shutil.which(r)), None),
@@ -259,7 +255,6 @@ def diagnostics() -> dict:
 
 
 class _YTLogger:
-    """Route yt-dlp output into logging so it shows up in Render's log stream."""
     def debug(self, msg):
         (log.warning if _setting("YT_VERBOSE") == "1" else log.debug)("yt-dlp: %s", msg)
 
@@ -275,7 +270,6 @@ class _YTLogger:
 
 @contextlib.contextmanager
 def _ydl_opts(url: str = "", **extra):
-    """Yield a fresh yt-dlp options dict; clean up the temp cookie copy afterwards."""
     tmp_cookie = None
     o = {
         "logger": _YTLogger(),
@@ -302,9 +296,9 @@ def _ydl_opts(url: str = "", **extra):
 
     proxy = _setting("YT_PROXY")
     if proxy and _is_youtube(url):
-        o["proxy"] = proxy                 # YouTube only: saves proxy bandwidth on other sites
+        o["proxy"] = proxy
     else:
-        o["source_address"] = "0.0.0.0"    # force IPv4 (more reliable on hosts)
+        o["source_address"] = "0.0.0.0"
 
     src = _cookie_source()
     if src:
@@ -313,7 +307,7 @@ def _ydl_opts(url: str = "", **extra):
         shutil.copyfile(src, tmp_cookie)
         o["cookiefile"] = tmp_cookie
     elif _setting("COOKIES_FROM_BROWSER"):
-        o["cookiesfrombrowser"] = (_setting("COOKIES_FROM_BROWSER"),)   # home machine only
+        o["cookiesfrombrowser"] = (_setting("COOKIES_FROM_BROWSER"),)
 
     o.update(extra)
     try:
@@ -376,7 +370,6 @@ def fetch_info(url: str) -> dict:
             })
 
     audio_formats.sort(key=lambda x: x["bitrate"], reverse=True)
-    # Within the same height, prefer H.264 (plays on every phone) over AV1/VP9 when de-duplicating.
     video_formats.sort(key=lambda x: (x["height"], x["codec"].startswith("avc"), x["fps"]), reverse=True)
 
     unique_videos, seen_videos = [], set()
@@ -407,10 +400,6 @@ def fetch_info(url: str) -> dict:
 
 def download(url: str, out_dir, kind="video", height=720, format_id=None, start=None, end=None,
              on_progress=None, cancel=None, on_message=None) -> dict:
-    """Download to out_dir using an exact format_id or falling back to best match.
-
-    Returns {"path", "filename", "title", "notes"}. Serve `filename` (it is the real name on disk).
-    """
     url = validate_url(url)
     require_ffmpeg()
     yt = _yt()
@@ -447,17 +436,17 @@ def download(url: str, out_dir, kind="video", height=720, format_id=None, start=
             if format_id:
                 fid = str(format_id)
                 if kind == "video":
-                    # chosen video track + best audio (m4a preferred); if the chosen format already
-                    # carries audio (TikTok/Facebook) or no separate audio exists, use it as-is.
                     opts["format"] = f"{fid}+ba[ext=m4a]/{fid}+ba/{fid}/b"
-                    opts["merge_output_format"] = "mp4/mkv"
+                    # MKV FIX: Force standard mp4 merging when an exact ID is chosen
+                    opts["merge_output_format"] = "mp4"
                 else:
                     opts["format"] = f"{fid}/ba/b"
             elif kind == "audio":
                 opts["format"] = "bestaudio/best"
             else:
                 opts["format"] = video_selector(height)
-                opts["merge_output_format"] = "mp4/mkv"
+                # MKV FIX: Force standard mp4 merging on general downloads
+                opts["merge_output_format"] = "mp4"
 
             max_mb = _setting("MAX_FILESIZE_MB")
             if max_mb:
@@ -483,8 +472,6 @@ def download(url: str, out_dir, kind="video", height=720, format_id=None, start=
             except Exception as e:
                 if cancel and cancel():
                     raise MediaError("Cancelled.")
-                # Only fall back for ordinary section-download failures. Blocks, private/removed
-                # videos, bad formats etc. would fail again on a full download.
                 if _classify(str(e)) != "other":
                     raise
                 log.warning("Section download failed (%s); falling back to full download + cut.",
@@ -516,39 +503,5 @@ def download(url: str, out_dir, kind="video", height=720, format_id=None, start=
         raise MediaError("The download finished but no file was produced. Try again, or try another quality.")
 
     title = (info or {}).get("title")
-    final = out_dir / f"{_safe_title(title)}{src.suffix}"
-    src.replace(final)
-
-    warn = ytdlp_version_warning()
-    return {
-        "path": str(final),
-        "filename": final.name,
-        "title": title,
-        "notes": notes + ([warn] if warn and not notes else []),
-    }
-
-
-# ---------------------------------------------------------------- internals
-def _find_output(out_dir: Path, info, use_info_path: bool):
-    """Locate the finished file: trust yt-dlp's own record first, else the largest real output."""
-    if use_info_path and info:
-        for rd in info.get("requested_downloads") or []:
-            p = rd.get("filepath")
-            if p and Path(p).is_file():
-                return Path(p)
-    files = [f for f in out_dir.glob("download.*")
-             if f.is_file() and f.suffix.lower() not in _SKIP_SUFFIXES]
-    return max(files, key=lambda f: f.stat().st_size) if files else None
-
-
-def _cut_after(out_dir: Path, start, end):
-    f = _find_output(out_dir, None, use_info_path=False)
-    if not f:
-        raise MediaError("Nothing was downloaded to cut.")
-    res = trim_media(str(f), out_dir, start or 0, end, mode="precise")
-    res_path = Path(res["path"])
-    if res_path.resolve() != f.resolve():
-        f.unlink(missing_ok=True)
-    target = out_dir / f"download{res_path.suffix}"
-    if res_path.resolve() != target.resolve():
-        res_path.replace(target)
+    
+    # GENERIC NAMING FIX: Identify bot-blocked titles and inject a unique ID so files do not overwrite each 
