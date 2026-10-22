@@ -499,4 +499,114 @@ def download(url: str, out_dir, kind="video", height=720, format_id=None, start=
                 opts["force_keyframes_at_cuts"] = True
 
             with yt.YoutubeDL(opts) as ydl:
-                retu
+                return ydl.extract_info(url, download=True)
+
+    cut_locally = False
+    try:
+        if wants_range:
+            if on_message:
+                on_message("Downloading only the part you selected…")
+            try:
+                info = run(True)
+            except MediaError:
+                raise
+            except Exception as e:
+                if cancel and cancel():
+                    raise MediaError("Cancelled.")
+                # Only fall back for ordinary section-download failures. Blocks, private/removed
+                # videos, bad formats etc. would fail again on a full download.
+                if _classify(str(e)) != "other":
+                    raise
+                log.warning("Section download failed (%s); falling back to full download + cut.",
+                            _ANSI.sub("", str(e))[:300])
+                notes.append("Section download wasn't possible for this link, so the whole file "
+                             "was downloaded and then cut.")
+                if on_message:
+                    on_message("Downloading the full file, then cutting…")
+                info = run(False)
+                cut_locally = True
+                _cut_after(out_dir, start, end)
+        else:
+            info = run(False)
+    except MediaError:
+        raise
+    except Exception as e:
+        if cancel and cancel():
+            raise MediaError("Cancelled.")
+        log.warning("download failed for %s: %s", url, _ANSI.sub("", str(e))[:500])
+        raise MediaError(friendly_error(str(e)))
+
+    if info and info.get("entries"):
+        info = next(iter(info["entries"]), None) or info
+
+    src = _find_output(out_dir, info, use_info_path=not cut_locally)
+    if not src:
+        if info and info.get("is_live"):
+            raise MediaError(friendly_error("live stream"))
+        raise MediaError("The download finished but no file was produced. Try again, or try another quality.")
+
+    if kind == "video":
+        if on_message and src.suffix.lower() != ".mp4":
+            on_message("Converting to MP4…")
+        src = _ensure_mp4(src)
+
+    title = _pick_title(info)
+    final = out_dir / f"{_safe_title(title)}{src.suffix}"
+    src.replace(final)
+
+    warn = ytdlp_version_warning()
+    return {
+        "path": str(final),
+        "filename": final.name,
+        "title": title,
+        "notes": notes + ([warn] if warn and not notes else []),
+    }
+
+
+# ---------------------------------------------------------------- internals
+def _find_output(out_dir: Path, info, use_info_path: bool):
+    """Locate the finished file: trust yt-dlp's own record first, else the largest real output."""
+    if use_info_path and info:
+        for rd in info.get("requested_downloads") or []:
+            p = rd.get("filepath")
+            if p and Path(p).is_file():
+                return Path(p)
+    files = [f for f in out_dir.glob("download.*")
+             if f.is_file() and f.suffix.lower() not in _SKIP_SUFFIXES]
+    return max(files, key=lambda f: f.stat().st_size) if files else None
+
+
+def _ensure_mp4(path: Path) -> Path:
+    """Remux mkv/webm/etc. to MP4 without re-encoding video (stream copy, audio -> AAC).
+    Low memory by design. On any failure the original file is kept."""
+    if path.suffix.lower() == ".mp4":
+        return path
+    out = path.with_name(path.stem + "_remux.mp4")
+    cmd = ["ffmpeg", "-y", "-v", "error", "-threads", "1", "-i", str(path),
+           "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+           "-movflags", "+faststart", str(out)]
+    try:
+        subprocess.run(cmd, check=True, timeout=600, capture_output=True)
+        if out.is_file() and out.stat().st_size > 0:
+            path.unlink(missing_ok=True)
+            final = path.with_suffix(".mp4")
+            out.replace(final)
+            return final
+    except Exception as e:
+        log.warning("MP4 remux failed (%s); keeping %s", str(e)[:200], path.suffix)
+    out.unlink(missing_ok=True)
+    return path
+
+
+def _cut_after(out_dir: Path, start, end):
+    f = _find_output(out_dir, None, use_info_path=False)
+    if not f:
+        raise MediaError("Nothing was downloaded to cut.")
+    res = trim_media(str(f), out_dir, start or 0, end, mode="precise")
+    res_path = Path(res["path"])
+    if res_path.resolve() != f.resolve():
+        f.unlink(missing_ok=True)
+    target = out_dir / f"download{res_path.suffix}"
+    if res_path.resolve() != target.resolve():
+        res_path.replace(target)
+     
