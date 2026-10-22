@@ -1,35 +1,28 @@
 """Video / audio downloading via yt-dlp (any site yt-dlp supports, not just YouTube).
 
-Design goals (unchanged from the original):
-  * One simple, widely compatible format selector (H.264 + AAC preferred) that never dead-ends.
-  * Time ranges use yt-dlp's section download; if that fails for an ordinary reason we fall back
-    to: download everything, then cut locally with ffmpeg.
-  * Clear, actionable messages for real-world failures.
-  * Unsafe URLs (localhost / private network) are refused -- required before this is a website.
-
-What changed for hosting on Render:
-  * Invalid `extractor_args` removed. Default yt-dlp client selection is used (it already picks the
-    right clients, and uses the cookie-capable ones when cookies are present). Optional override via
-    the YT_PLAYER_CLIENTS env var, in the correct dict format.
-  * Cookies: found in env path / Render Secret File / repo root, validated, and copied to a private
-    temp file per call (yt-dlp writes back to the jar, and calls can run concurrently).
-  * Optional residential proxy for YouTube only (YT_PROXY) -- the real fix for datacenter-IP blocks.
-  * Optional PO-token provider URL (YT_POT_BASE_URL) for the bgutil plugin.
-  * Error classification is stricter (age-gate no longer reported as "bot check", "format not
-    available" no longer reported as "video unavailable"); the range fallback no longer retries
-    when the failure is a block that a second download can't fix.
-  * Output filename is byte-safe (255-byte limit) and emoji-free, so what is on disk matches what
-    the route serves (root cause of the 404s on titles with emojis). The result also carries
-    "filename" -- serve that, never rebuild it from the title.
-  * Live streams are refused (they would download forever on a public server).
-  * yt-dlp output goes to the `downloader` logger, so Render logs show the real reason.
+Changes in this revision (Render / Facebook / TikTok failures):
+  * Proxy is no longer YouTube-only. MEDIA_PROXY applies to every site; YT_PROXY (if set) overrides
+    it for YouTube. A residential proxy is the real fix for datacenter-IP blocks on FB/TikTok.
+  * Browser impersonation (curl_cffi) is enabled for non-YouTube sites when installed:
+        pip install "yt-dlp[default,curl-cffi]"
+    This is what lets yt-dlp read Facebook/TikTok pages, so real titles come back.
+  * Cookies are only attached to YouTube requests. Cookies from your home network sent to FB/TikTok
+    from a datacenter IP get the session flagged, which made every other request fail faster.
+  * Titles: generic extractor titles ("Video", "Facebook Live") are replaced with a name built from
+    the extractor + video id, so files are distinguishable.
+  * Output is always MP4 for video: merge_output_format="mp4", plus a cheap ffmpeg remux
+    (stream copy, audio->AAC) if anything else (mkv/webm) still comes out. No video re-encode.
+  * concurrent_fragment_downloads defaults to 1 (set YT_FRAGMENTS to raise it) to keep RAM flat
+    on Render's 512MB tier.
 
 Environment variables (all optional):
-  YT_PROXY            e.g. http://user:pass@host:port   (used for YouTube links only)
-  YT_COOKIES_FILE     path to a Netscape-format cookies.txt (Render Secret Files mount at /etc/secrets/)
-  YT_POT_BASE_URL     e.g. http://127.0.0.1:4416        (bgutil PO-token provider HTTP server)
-  YT_PLAYER_CLIENTS   e.g. tv,web_safari,mweb           (override yt-dlp's default client choice)
-  YT_VERBOSE          1 = log yt-dlp debug output at WARNING level (visible in Render logs)
+  MEDIA_PROXY         http://user:pass@host:port   (all sites)
+  YT_PROXY            http://user:pass@host:port   (YouTube only; overrides MEDIA_PROXY there)
+  YT_COOKIES_FILE     path to a Netscape cookies.txt (YouTube only)
+  YT_POT_BASE_URL     bgutil PO-token provider, e.g. http://127.0.0.1:4416
+  YT_PLAYER_CLIENTS   e.g. tv,web_safari,mweb
+  YT_FRAGMENTS        parallel fragment downloads (default 1)
+  YT_VERBOSE          1 = yt-dlp debug output in logs
 """
 import contextlib
 import ipaddress
@@ -38,6 +31,7 @@ import os
 import re
 import shutil
 import socket
+import subprocess
 import tempfile
 import unicodedata
 from datetime import datetime
@@ -57,6 +51,8 @@ VIDEO_HEIGHTS = [2160, 1440, 1080, 720, 480, 360]
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 _SKIP_SUFFIXES = (".part", ".ytdl", ".temp", ".json", ".jpg", ".jpeg", ".png",
                   ".webp", ".vtt", ".srt", ".description")
+_GENERIC_TITLES = {"", "video", "videos", "untitled", "facebook", "facebook live", "facebook video",
+                   "tiktok", "tiktok video", "watch", "download", "reel", "reels"}
 
 
 def _setting(name, default=None):
@@ -91,11 +87,10 @@ def validate_url(url: str) -> str:
 
 def video_selector(height=None) -> str:
     h = f"[height<={int(height)}]" if height else ""
-    # STRICT MP4 FIX: Force the selector to explicitly require mp4 extensions
-    return (f"bv*{h}[ext=mp4]+ba[ext=m4a]/"
+    return (f"bv*{h}[vcodec^=avc1]+ba[ext=m4a]/"      # best case: plays everywhere, no re-encode
+            f"bv*{h}[ext=mp4]+ba[ext=m4a]/"
             f"b{h}[ext=mp4]/"
-            f"bestvideo[ext=mp4]+bestaudio[ext=m4a]/"
-            f"best[ext=mp4]/best")
+            f"bv*{h}+ba/b{h}/b")                       # never dead-ends
 
 
 def _classify(raw: str) -> str:
@@ -135,16 +130,18 @@ def friendly_error(raw: str) -> str:
     raw = _ANSI.sub("", raw or "")
     kind = _classify(raw)
 
+    # Operator hints go to the server log, not to the website visitor.
     if kind == "bot":
-        log.error("[operator] YouTube bot check. This is almost always the server's cloud IP. Fix: set "
+        log.error("[operator] Bot check. Almost always the server's cloud IP. Fix: set MEDIA_PROXY / "
                   "YT_PROXY (residential), run the bgutil PO-token provider (YT_POT_BASE_URL), and use "
-                  "fresh cookies from a private browser window. Raw: %s", raw.strip()[:300])
+                  "fresh cookies from a private browser window (YouTube only). Raw: %s", raw.strip()[:300])
     elif kind == "blocked":
         log.error("[operator] Site returned 403 / challenge failure. Fix: update yt-dlp (nightly), make "
-                  "sure Deno is installed and on PATH, and use a PO-token provider. Raw: %s", raw.strip()[:300])
+                  "sure Deno is installed and on PATH, install curl-cffi for impersonation, and use a "
+                  "proxy / PO-token provider. Raw: %s", raw.strip()[:300])
 
     messages = {
-        "bot": "YouTube is temporarily blocking this server. Please try again later or try another link.",
+        "bot": "The site is temporarily blocking this server. Please try again later or try another link.",
         "blocked": "The site blocked the download (verification failed). Please try again later.",
         "rate": "Too many requests right now. Please wait a few minutes and try again.",
         "age": "This video is age-restricted and can't be downloaded here.",
@@ -173,6 +170,17 @@ def _safe_title(t: str, max_bytes: int = 150) -> str:
     return t.strip(" .") or "download"
 
 
+def _pick_title(info) -> str:
+    """Real title if the extractor got one; otherwise '<Site> <id>' instead of a generic 'Video'."""
+    info = info or {}
+    t = (info.get("title") or "").strip()
+    if t.lower() not in _GENERIC_TITLES and not re.fullmatch(r"(video|facebook|tiktok)[ _-]?\d*", t.lower()):
+        return t
+    site = (info.get("extractor_key") or info.get("extractor") or "Video").split(":")[0]
+    vid = str(info.get("id") or datetime.now().strftime("%Y%m%d-%H%M%S"))[:24]
+    return f"{site} {vid}"
+
+
 # ---------------------------------------------------------------- yt-dlp setup
 def _yt():
     try:
@@ -184,34 +192,46 @@ def _yt():
 
 
 def ytdlp_version_warning():
+    """An old yt-dlp is the #1 cause of broken downloads."""
     try:
         from yt_dlp.version import __version__ as v
         d = datetime.strptime(".".join(v.split(".")[:3]), "%Y.%m.%d")
         if (datetime.now() - d).days > 30:
-            return f"yt-dlp ({v}) is over a month old. Rebuild with: pip install -U --pre 'yt-dlp[default]'"
+            return f"yt-dlp ({v}) is over a month old. Rebuild with: pip install -U --pre 'yt-dlp[default,curl-cffi]'"
     except Exception:
         pass
     return None
+
+
+def _impersonate_target():
+    """Chrome impersonation for non-YouTube sites. None if curl_cffi isn't installed."""
+    try:
+        import curl_cffi  # noqa: F401
+        from yt_dlp.networking.impersonate import ImpersonateTarget
+        return ImpersonateTarget("chrome")
+    except Exception:
+        return None
 
 
 _checked = False
 
 
 def _startup_checks():
+    """One-time sanity log so Render logs explain failures before they happen."""
     global _checked
     if _checked:
         return
     _checked = True
     if not any(shutil.which(r) for r in ("deno", "node", "bun", "qjs")):
-        log.warning("No JavaScript runtime (deno/node/bun/quickjs) on PATH. Current yt-dlp needs one "
-                    "to solve YouTube's challenges. Install Deno in your Render build.")
+        log.warning("No JavaScript runtime (deno/node/bun/quickjs) on PATH. Install Deno in your build.")
     w = ytdlp_version_warning()
     if w:
         log.warning(w)
-    if not _cookie_source():
-        log.info("No valid cookies.txt found (YouTube may demand sign-in from a cloud IP).")
-    if not _setting("YT_PROXY"):
-        log.info("YT_PROXY not set: YouTube requests go out from this server's own (datacenter) IP.")
+    if _impersonate_target() is None:
+        log.warning("curl_cffi not installed: Facebook/TikTok extraction will likely fail from a "
+                    "datacenter IP. Add 'yt-dlp[default,curl-cffi]' to requirements.")
+    if not (_setting("MEDIA_PROXY") or _setting("YT_PROXY")):
+        log.info("No proxy set: all requests go out from this server's datacenter IP.")
 
 
 def _is_youtube(url: str) -> bool:
@@ -219,10 +239,11 @@ def _is_youtube(url: str) -> bool:
     return h == "youtu.be" or h.endswith("youtube.com") or h.endswith("youtube-nocookie.com")
 
 
-is_youtube = _is_youtube
+is_youtube = _is_youtube     # public name used by route.py / relay
 
 
 def _cookie_source():
+    """Return the first usable Netscape-format cookie file, or None."""
     candidates = []
     env = os.getenv("YT_COOKIES_FILE")
     if env:
@@ -244,17 +265,20 @@ def _cookie_source():
 
 
 def diagnostics() -> dict:
+    """Non-secret server config summary (names/booleans only) for /api/health."""
     import importlib.util
     return {
         "js_runtime": next((r for r in ("deno", "node", "bun", "qjs") if shutil.which(r)), None),
         "ejs": importlib.util.find_spec("yt_dlp_ejs") is not None,
+        "impersonation": _impersonate_target() is not None,
         "cookies": bool(_cookie_source()),
-        "proxy": bool(_setting("YT_PROXY")),
+        "proxy": bool(_setting("MEDIA_PROXY") or _setting("YT_PROXY")),
         "pot_provider": bool(_setting("YT_POT_BASE_URL")),
     }
 
 
 class _YTLogger:
+    """Route yt-dlp output into logging so it shows up in Render's log stream."""
     def debug(self, msg):
         (log.warning if _setting("YT_VERBOSE") == "1" else log.debug)("yt-dlp: %s", msg)
 
@@ -270,7 +294,13 @@ class _YTLogger:
 
 @contextlib.contextmanager
 def _ydl_opts(url: str = "", **extra):
+    """Yield a fresh yt-dlp options dict; clean up the temp cookie copy afterwards."""
     tmp_cookie = None
+    yt_site = _is_youtube(url)
+    try:
+        frags = max(1, int(_setting("YT_FRAGMENTS", 1)))
+    except (TypeError, ValueError):
+        frags = 1
     o = {
         "logger": _YTLogger(),
         "color": "no_color",
@@ -278,36 +308,44 @@ def _ydl_opts(url: str = "", **extra):
         "retries": 10,
         "fragment_retries": 10,
         "socket_timeout": 30,
-        "concurrent_fragment_downloads": 4,
+        "concurrent_fragment_downloads": frags,
         "noprogress": True,
     }
     if _setting("YT_VERBOSE") == "1":
         o["verbose"] = True
 
-    ea = {}
-    clients = _setting("YT_PLAYER_CLIENTS")
-    if clients:
-        ea["youtube"] = {"player_client": [c.strip() for c in clients.split(",") if c.strip()]}
-    pot = _setting("YT_POT_BASE_URL")
-    if pot:
-        ea["youtubepot-bgutilhttp"] = {"base_url": [pot]}
-    if ea:
-        o["extractor_args"] = ea
+    if yt_site:
+        ea = {}
+        clients = _setting("YT_PLAYER_CLIENTS")
+        if clients:
+            ea["youtube"] = {"player_client": [c.strip() for c in clients.split(",") if c.strip()]}
+        pot = _setting("YT_POT_BASE_URL")
+        if pot:
+            ea["youtubepot-bgutilhttp"] = {"base_url": [pot]}
+        if ea:
+            o["extractor_args"] = ea
+    else:
+        target = _impersonate_target()
+        if target is not None:
+            o["impersonate"] = target
 
-    proxy = _setting("YT_PROXY")
-    if proxy and _is_youtube(url):
+    proxy = (_setting("YT_PROXY") if yt_site else None) or _setting("MEDIA_PROXY")
+    if proxy:
         o["proxy"] = proxy
     else:
-        o["source_address"] = "0.0.0.0"
+        o["source_address"] = "0.0.0.0"    # force IPv4 (more reliable on hosts)
 
-    src = _cookie_source()
-    if src:
-        fd, tmp_cookie = tempfile.mkstemp(prefix="ytcookies_", suffix=".txt")
-        os.close(fd)
-        shutil.copyfile(src, tmp_cookie)
-        o["cookiefile"] = tmp_cookie
-    elif _setting("COOKIES_FROM_BROWSER"):
-        o["cookiesfrombrowser"] = (_setting("COOKIES_FROM_BROWSER"),)
+    # Cookies: YouTube only. Sending home-network cookies to FB/TikTok from a datacenter IP
+    # gets the session flagged and makes things worse.
+    if yt_site:
+        src = _cookie_source()
+        if src:
+            fd, tmp_cookie = tempfile.mkstemp(prefix="ytcookies_", suffix=".txt")
+            os.close(fd)
+            shutil.copyfile(src, tmp_cookie)
+            o["cookiefile"] = tmp_cookie
+        elif _setting("COOKIES_FROM_BROWSER"):
+            o["cookiesfrombrowser"] = (_setting("COOKIES_FROM_BROWSER"),)   # home machine only
 
     o.update(extra)
     try:
@@ -370,6 +408,7 @@ def fetch_info(url: str) -> dict:
             })
 
     audio_formats.sort(key=lambda x: x["bitrate"], reverse=True)
+    # Within the same height, prefer H.264 (plays on every phone) over AV1/VP9 when de-duplicating.
     video_formats.sort(key=lambda x: (x["height"], x["codec"].startswith("avc"), x["fps"]), reverse=True)
 
     unique_videos, seen_videos = [], set()
@@ -387,7 +426,7 @@ def fetch_info(url: str) -> dict:
             unique_audios.append(a)
 
     return {
-        "title": info.get("title") or "Untitled",
+        "title": _pick_title(info),
         "uploader": info.get("uploader") or info.get("channel"),
         "duration": info.get("duration"),
         "thumbnail": info.get("thumbnail"),
@@ -400,6 +439,10 @@ def fetch_info(url: str) -> dict:
 
 def download(url: str, out_dir, kind="video", height=720, format_id=None, start=None, end=None,
              on_progress=None, cancel=None, on_message=None) -> dict:
+    """Download to out_dir using an exact format_id or falling back to best match.
+
+    Returns {"path", "filename", "title", "notes"}. Serve `filename` (it is the real name on disk).
+    """
     url = validate_url(url)
     require_ffmpeg()
     yt = _yt()
@@ -437,7 +480,6 @@ def download(url: str, out_dir, kind="video", height=720, format_id=None, start=
                 fid = str(format_id)
                 if kind == "video":
                     opts["format"] = f"{fid}+ba[ext=m4a]/{fid}+ba/{fid}/b"
-                    # MKV FIX: Force standard mp4 merging when an exact ID is chosen
                     opts["merge_output_format"] = "mp4"
                 else:
                     opts["format"] = f"{fid}/ba/b"
@@ -445,7 +487,6 @@ def download(url: str, out_dir, kind="video", height=720, format_id=None, start=
                 opts["format"] = "bestaudio/best"
             else:
                 opts["format"] = video_selector(height)
-                # MKV FIX: Force standard mp4 merging on general downloads
                 opts["merge_output_format"] = "mp4"
 
             max_mb = _setting("MAX_FILESIZE_MB")
@@ -458,50 +499,4 @@ def download(url: str, out_dir, kind="video", height=720, format_id=None, start=
                 opts["force_keyframes_at_cuts"] = True
 
             with yt.YoutubeDL(opts) as ydl:
-                return ydl.extract_info(url, download=True)
-
-    cut_locally = False
-    try:
-        if wants_range:
-            if on_message:
-                on_message("Downloading only the part you selected…")
-            try:
-                info = run(True)
-            except MediaError:
-                raise
-            except Exception as e:
-                if cancel and cancel():
-                    raise MediaError("Cancelled.")
-                if _classify(str(e)) != "other":
-                    raise
-                log.warning("Section download failed (%s); falling back to full download + cut.",
-                            _ANSI.sub("", str(e))[:300])
-                notes.append("Section download wasn't possible for this link, so the whole file "
-                             "was downloaded and then cut.")
-                if on_message:
-                    on_message("Downloading the full file, then cutting…")
-                info = run(False)
-                cut_locally = True
-                _cut_after(out_dir, start, end)
-        else:
-            info = run(False)
-    except MediaError:
-        raise
-    except Exception as e:
-        if cancel and cancel():
-            raise MediaError("Cancelled.")
-        log.warning("download failed for %s: %s", url, _ANSI.sub("", str(e))[:500])
-        raise MediaError(friendly_error(str(e)))
-
-    if info and info.get("entries"):
-        info = next(iter(info["entries"]), None) or info
-
-    src = _find_output(out_dir, info, use_info_path=not cut_locally)
-    if not src:
-        if info and info.get("is_live"):
-            raise MediaError(friendly_error("live stream"))
-        raise MediaError("The download finished but no file was produced. Try again, or try another quality.")
-
-    title = (info or {}).get("title")
-    
-    # GENERIC NAMING FIX: Identify bot-blocked titles and inject a unique ID so files do not overwrite each 
+                retu
