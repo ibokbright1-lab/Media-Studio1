@@ -226,11 +226,14 @@ def api_trim():
 def api_info():
     d = request.get_json(silent=True) or request.form
     url = d.get("url", "")
-    if not HOME_MODE and relay.enabled() and downloader.is_youtube(url):
+    if not HOME_MODE and downloader.is_youtube(url):
+        if not relay.enabled():
+            raise MediaError("YouTube processing requires the Home Relay to be online. Please try TikTok, Facebook, or Instagram.")
         downloader.validate_url(url)
         r = _relay_json("POST", "/api/info", {"url": url}, timeout=60)
         if r:
             return jsonify(r[1]), r[0]
+        raise MediaError("Home relay failed to respond for YouTube. Please ensure home_agent.py is running.")
     return jsonify(downloader.fetch_info(url))
 
 
@@ -269,7 +272,9 @@ def api_download():
     if fmt not in FORMATS or preset not in PRESETS:
         raise MediaError("Unknown format or quality preset.")
 
-    if not HOME_MODE and relay.enabled() and downloader.is_youtube(url):
+    if not HOME_MODE and downloader.is_youtube(url):
+        if not relay.enabled():
+            raise MediaError("YouTube processing requires the Home Relay to be online. Please try TikTok, Facebook, or Instagram.")
         payload = {k: d.get(k) for k in ("url", "kind", "height", "format_id", "start", "end", "fmt", "preset")
                    if d.get(k) is not None}
         r = _relay_json("POST", "/api/download", payload)
@@ -278,6 +283,7 @@ def api_download():
             if code == 200 and body.get("job_id"):
                 return jsonify({"job_id": relay.PREFIX + body["job_id"]})
             return jsonify(body), code
+        raise MediaError("Home relay failed to process YouTube download. Please ensure home_agent.py is running.")
 
     def work(job, _in, out_dir):
         return run_download(job.update, lambda: job.cancelled, out_dir, url, kind,
